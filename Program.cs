@@ -9,6 +9,8 @@ using System.Text;
 using Prometheus;
 using Npgsql;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Components.Authorization;
+using playground_check.Controllers;
 
 Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(AppConfig.Configuration)
@@ -29,6 +31,13 @@ try
     builder.Services.AddRazorPages();
     builder.Services.AddServerSideBlazor();
     builder.Services.AddSingleton<WeatherForecastService>();
+
+    // Add services for user login:
+    builder.Services.AddAuthorizationCore();
+    builder.Services.AddScoped<LoginController>();
+    builder.Services.AddScoped<CustomAuthStateProvider>();
+    builder.Services.AddScoped<AuthenticationStateProvider>(provider => 
+            provider.GetRequiredService<CustomAuthStateProvider>());
 
     var app = builder.Build();
 

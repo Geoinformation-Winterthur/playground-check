@@ -1,0 +1,37 @@
+@page "/login"
+@using playground_check.Controllers
+@using playground_check.Model
+@inject CustomAuthStateProvider AuthProvider
+@inject LoginController LoginController
+@inject NavigationManager Nav
+
+<EditForm Model="loginObj" OnValidSubmit="HandleLogin">
+    <InputText @bind-Value="loginObj.mailAddress" placeholder="Benutzername" />
+    <InputText @bind-Value="loginObj.passPhrase" type="password" placeholder="Passwort" />
+    <button type="submit">Login</button>
+</EditForm>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <p style="color:red">@Error</p>
+}
+
+@code {
+    private User loginObj = new();
+    private string? Error;
+
+    private async Task HandleLogin()
+    {
+        User user = await LoginController.AuthenticateAsync(loginObj, false);
+
+        if (user != null)
+        {
+            AuthProvider.MarkUserAsAuthenticated(user.mailAddress, user.role);
+            Nav.NavigateTo("/");
+        }
+        else
+        {
+            Error = "Login fehlgeschlagen.";
+        }
+    }
+}
