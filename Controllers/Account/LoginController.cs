@@ -139,8 +139,8 @@ public class LoginController : ControllerBase
                 string securityTokenString = new JwtSecurityTokenHandler().WriteToken(securityToken);
 
                 _logger.LogInformation("User " + receivedUser.mailAddress + " has logged in.");
-                receivedUser.passPhrase = "";
-                return Task.FromResult(LoginResult.SuccessResult(receivedUser));
+                userFromDb.passPhrase = "";
+                return Task.FromResult(LoginResult.SuccessResult(userFromDb));
             }
             else
             {

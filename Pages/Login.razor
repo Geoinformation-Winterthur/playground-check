@@ -26,7 +26,7 @@
 
         if (result.Success && result.User != null)
         {
-            AuthProvider.MarkUserAsAuthenticated(result.User.mailAddress, result.User.role);
+            AuthProvider.MarkUserAsAuthenticated(result.User, result.User.role);
             Error = null;
             Nav.NavigateTo("/");
         }
