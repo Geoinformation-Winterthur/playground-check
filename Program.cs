@@ -43,8 +43,10 @@ try
     builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
             provider.GetRequiredService<CustomAuthStateProvider>());
 
+    builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen(options => {
+    builder.Services.AddSwaggerGen(options =>
+    {
         string serviceDescription = AppConfig.Configuration.GetValue<string>("ServiceDescription");
         options.SwaggerDoc("v1", new OpenApiInfo
         {
@@ -92,6 +94,12 @@ try
 
     app.MapBlazorHub();
     app.MapFallbackToPage("/_Host");
+
+    app.UseEndpoints(endpoints =>
+    {
+        endpoints.MapControllers();
+        // endpoints.MapMetrics().RequireAuthorization("BasicAuthenticationForPrometheus");
+    });
 
     app.Run();
 
