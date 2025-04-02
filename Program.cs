@@ -27,6 +27,10 @@ try
 
     builder.Host.UseSerilog();
 
+    string serviceDomain = AppConfig.Configuration.GetValue<string>("URL:ServiceDomain");
+    string serviceBasePath = AppConfig.Configuration.GetValue<string>("URL:ServiceBasePath");
+    string securityKey = AppConfig.Configuration.GetValue<string>("SecurityKey");
+
     // Add services to the container.
     builder.Services.AddRazorPages();
     builder.Services.AddServerSideBlazor();
@@ -36,8 +40,22 @@ try
     builder.Services.AddAuthorizationCore();
     builder.Services.AddScoped<LoginController>();
     builder.Services.AddScoped<CustomAuthStateProvider>();
-    builder.Services.AddScoped<AuthenticationStateProvider>(provider => 
+    builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
             provider.GetRequiredService<CustomAuthStateProvider>());
+
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(options => {
+        string serviceDescription = AppConfig.Configuration.GetValue<string>("ServiceDescription");
+        options.SwaggerDoc("v1", new OpenApiInfo
+        {
+            Title = "Winterthur Playground Regular Inspection API - V1",
+            Version = "v1",
+            Description = serviceDescription
+        });
+        var commentsXmlFile = Path.Combine(System.AppContext.BaseDirectory,
+                        "playground-check.xml");
+        options.IncludeXmlComments(commentsXmlFile);
+    });
 
     var app = builder.Build();
 
@@ -48,6 +66,23 @@ try
         // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
         app.UseHsts();
     }
+
+    app.UseSwagger(options =>
+{
+    if (!app.Environment.IsDevelopment())
+    {
+        options.PreSerializeFilters.Add((doc, httpRequest) =>
+        {
+            doc.Servers = new List<OpenApiServer> {
+                    new OpenApiServer {
+                        Url = serviceDomain + serviceBasePath
+                        }
+                    };
+
+        });
+    }
+});
+    app.UseSwaggerUI();
 
     app.UseHttpsRedirection();
 

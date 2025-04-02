@@ -47,13 +47,13 @@ public class LoginController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<User?> AuthenticateAsync([FromBody] User receivedUser, bool dryRun = false)
+    public Task<LoginResult> AuthenticateAsync([FromBody] User receivedUser, bool dryRun = false)
     {
         if (receivedUser == null || receivedUser.mailAddress == null)
         {
             // login data is missing something important, thus:
             _logger.LogWarning("No or bad login credentials provided in a login attempt.");
-            return null;
+            return Task.FromResult(LoginResult.Error("Keine oder falsche Login-Daten."));
         }
 
         receivedUser.mailAddress = receivedUser.mailAddress.ToLower().Trim();
@@ -62,7 +62,7 @@ public class LoginController : ControllerBase
         {
             // login data is missing something important, thus:
             _logger.LogWarning("No or bad login credentials provided in a login attempt.");
-            return null;
+            return Task.FromResult(LoginResult.Error("Keine oder falsche Login-Daten."));
         }
 
         try
@@ -72,7 +72,7 @@ public class LoginController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning("No or bad login credentials provided in a login attempt.");
-            return null;
+            return Task.FromResult(LoginResult.Error("Keine oder falsche Login-Daten."));
         }
 
         _logger.LogInformation("User " + receivedUser.mailAddress + " tries to log in.");
@@ -81,7 +81,7 @@ public class LoginController : ControllerBase
         {
             // login data is missing something important, thus:
             _logger.LogWarning("No or bad login credentials provided by user.");
-            return null;
+            return Task.FromResult(LoginResult.Error("Keine oder falsche Login-Daten."));
         }
 
         string hashedPassphrase = HelperFunctions.hashPassphrase(receivedUser.passPhrase);
@@ -140,13 +140,13 @@ public class LoginController : ControllerBase
 
                 _logger.LogInformation("User " + receivedUser.mailAddress + " has logged in.");
                 receivedUser.passPhrase = "";
-                return receivedUser;
+                return Task.FromResult(LoginResult.SuccessResult(receivedUser));
             }
             else
             {
                 _logger.LogWarning("The provided credentials of user " + receivedUser.mailAddress +
                         " did not match with the credentials in the database.");
-                return null;
+                return Task.FromResult(LoginResult.Error("Keine oder falsche Login-Daten."));
             }
         }
         else
@@ -173,13 +173,15 @@ public class LoginController : ControllerBase
 
                     pgConn.Close();
 
-                    return null;
+                    return Task.FromResult(LoginResult.Error("Sie sind entweder nicht als Kontrolleur in der " +
+                            "Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung." +
+                            "Der Administrator wird informiert und wird Ihnen gegebenenfalls den Zugriff gewähren."));
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
-                return null;
+                    return Task.FromResult(LoginResult.Error("Ein kritischer Fehler ist aufgetreten. Bitte kontaktieren Sie den Administrator."));
             }
         }
     }
@@ -277,6 +279,19 @@ public class LoginController : ControllerBase
 
             pgConn.Close();
         }
+    }
+
+    public class LoginResult
+    {
+        public bool Success { get; set; }
+        public string? ErrorMessage { get; set; }
+        public User? User { get; set; }
+
+        public static LoginResult SuccessResult(User user) =>
+            new LoginResult { Success = true, User = user };
+
+        public static LoginResult Error(string message) =>
+            new LoginResult { Success = false, ErrorMessage = message };
     }
 
 }

@@ -22,16 +22,18 @@
 
     private async Task HandleLogin()
     {
-        User user = await LoginController.AuthenticateAsync(loginObj, false);
+        var result = await LoginController.AuthenticateAsync(loginObj, false);
 
-        if (user != null)
+        if (result.Success && result.User != null)
         {
-            AuthProvider.MarkUserAsAuthenticated(user.mailAddress, user.role);
+            AuthProvider.MarkUserAsAuthenticated(result.User.mailAddress, result.User.role);
+            Error = null;
             Nav.NavigateTo("/");
         }
         else
         {
-            Error = "Login fehlgeschlagen.";
+            Error = result.ErrorMessage;
         }
     }
+
 }
