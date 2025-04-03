@@ -11,6 +11,7 @@ using Npgsql;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Components.Authorization;
 using playground_check.Controllers;
+using playground_check.Services;
 
 Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(AppConfig.Configuration)
@@ -38,10 +39,13 @@ try
 
     // Add services for user login:
     builder.Services.AddAuthorizationCore();
+
     builder.Services.AddScoped<LoginController>();
     builder.Services.AddScoped<CustomAuthStateProvider>();
     builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
             provider.GetRequiredService<CustomAuthStateProvider>());
+
+    builder.Services.AddScoped<IPlaygroundService, PlaygroundService>();
 
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();

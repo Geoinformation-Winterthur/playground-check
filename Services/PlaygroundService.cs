@@ -1,9 +1,8 @@
-﻿// <copyright company="Vermessungsamt Winterthur">
+// <copyright company="Vermessungsamt Winterthur">
 //      Author: Edgar Butwilowski
 //      Copyright (c) Vermessungsamt Winterthur. All rights reserved.
 // </copyright>
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
@@ -12,93 +11,262 @@ using playground_check.Model;
 using System.Text;
 using playground_check.Configuration;
 using NetTopologySuite.Geometries;
-using playground_check.Services;
+using playground_check.Controllers;
 
-namespace playground_check.Controllers
+namespace playground_check.Services
 {
     /// <summary>
-    /// This is the controller for playground data. Playground data is available
+    /// This is the service for playground data. Playground data is available
     /// at the /playground route.
     /// </summary>
     /// <remarks>
-    /// This controller provides a list of the names of all playgrounds in the database.
+    /// This service provides a list of the names of all playgrounds in the database.
     /// It also provides single playground objects by id and by name. It is possible to
-    /// post a single playground object to this controller. Therefore, the route of this
-    /// controller provides read and write access.
+    /// post a single playground object to this service. Therefore, the route of this
+    /// service provides read and write access.
     /// </remarks>
-    [ApiController]
-    [Route("[controller]")]
-    public class PlaygroundController : ControllerBase
+    public class PlaygroundService : IPlaygroundService
     {
-        private readonly IPlaygroundService _service;
+        private readonly ILogger<PlaygroundService> _logger;
 
-        public PlaygroundController(IPlaygroundService service)
+        public PlaygroundService(ILogger<PlaygroundService> logger)
         {
-            _service = service;
+            _logger = logger;
         }
 
-        // GET /collections/playgrounds/items/
-        /// <summary>
-        /// Retrieves a collection of all public playgrounds of the City
-        /// of Winterthur that are operated by the Municipal Green Office.
-        /// </summary>
-        /// <response code="200">
-        /// The data is returned in an array of feature objects.
-        /// </response>
-        [Route("/Collections/Playgrounds/Items/")]
-        [HttpGet]
-        [ProducesResponseType(typeof(PlaygroundFeature[]), 200)]
         public async Task<PlaygroundFeature[]> GetFeaturesInCollection()
         {
-            var result = await _service.GetFeaturesInCollection();
-            return result;
+            List<PlaygroundFeature> result = new List<PlaygroundFeature>();
+
+            try
+            {
+                using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
+                {
+                    await pgConn.OpenAsync();
+                    NpgsqlCommand selectComm = pgConn.CreateCommand();
+                    selectComm.CommandText = "SELECT uuid, nummer, name, strassenname, hausnummer, geom FROM \"wgr_sp_spielplatz\"";
+
+                    using (NpgsqlDataReader reader = await selectComm.ExecuteReaderAsync())
+                    {
+                        PlaygroundFeature currentPlayground;
+                        while (await reader.ReadAsync())
+                        {
+                            currentPlayground = new PlaygroundFeature();
+                            currentPlayground.properties.uuid = reader.IsDBNull(0) ? "" : reader.GetString(0);
+                            currentPlayground.properties.nummer = reader.IsDBNull(1) ? -1 : reader.GetInt32(1);
+                            currentPlayground.properties.name = reader.IsDBNull(2) ? "" : reader.GetString(2);
+                            currentPlayground.properties.streetName = reader.IsDBNull(3) ? "" : reader.GetString(3);
+                            currentPlayground.properties.houseNo = reader.IsDBNull(4) ? "" : reader.GetString(4);
+
+                            Point ntsPoint = reader.IsDBNull(5) ? Point.Empty : reader.GetValue(5) as Point;
+                            currentPlayground.geometry = new PlaygroundFeaturePoint(ntsPoint);
+                            result.Add(currentPlayground);
+                        }
+                        return result.ToArray();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex.Message);
+                PlaygroundFeature errObj = new PlaygroundFeature();
+                errObj.errorMessage = "Unknown critical error.";
+                return new PlaygroundFeature[] { errObj };
+            }
         }
 
-        // GET /collections/playgrounds/items/638364
-        /// <summary>
-        /// Retrieves the public playground of the City of Winterthur
-        /// that is operated by the Municipal Green Office for the
-        /// given UUID.
-        /// </summary>
-        /// <response code="200">
-        /// The data is returned as a feature objects.
-        /// </response>
-        [Route("/Collections/Playgrounds/Items/{uuid}")]
-        [HttpGet]
-        [ProducesResponseType(typeof(PlaygroundFeature), 200)]
         public async Task<PlaygroundFeature> GetPlaygroundAsFeature(string uuid)
         {
-            var result = await _service.GetPlaygroundAsFeature(uuid);
-            return result;
+            if (uuid == null)
+            {
+                uuid = "";
+            }
+            else
+            {
+                uuid = uuid.Trim().ToLower();
+            }
+
+            PlaygroundFeature result = new PlaygroundFeature();
+            if (uuid == "")
+            {
+                _logger.LogInformation("No valid UUID provided by the user in public GET playground as feature operation");
+                result.errorMessage = "No valid UUID provided.";
+                return result;
+            }
+            result.properties.uuid = uuid;
+
+            try
+            {
+                using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
+                {
+                    await pgConn.OpenAsync();
+                    NpgsqlCommand selectComm = pgConn.CreateCommand();
+                    selectComm.CommandText = "SELECT nummer, name, strassenname, hausnummer, geom FROM \"wgr_sp_spielplatz\" WHERE uuid=@uuid";
+                    selectComm.Parameters.AddWithValue("uuid", uuid);
+
+                    using (NpgsqlDataReader reader = await selectComm.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            result.properties.nummer = reader.IsDBNull(0) ? -1 : reader.GetInt32(0);
+                            result.properties.name = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                            result.properties.streetName = reader.IsDBNull(2) ? "" : reader.GetString(2);
+                            result.properties.houseNo = reader.IsDBNull(3) ? "" : reader.GetString(3);
+
+                            Point ntsPoint = reader.IsDBNull(4) ? Point.Empty : reader.GetValue(4) as Point;
+                            result.geometry = new PlaygroundFeaturePoint(ntsPoint);
+                            return result;
+                        }
+                        else
+                        {
+                            result.errorMessage = "No playground found for given UUID.";
+                            return result;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex.Message);
+                result.errorMessage = "Unknown critical error.";
+                return result;
+            }
         }
 
-        // GET Playground/8262517&inspectiontype=...
-        [Route("/Playground/{id}")]
-        [HttpGet]
-        [Authorize]
+
         public Playground GetById(int id, string inspectionType)
         {
-            var result = _service.GetById(id, inspectionType);
-            return result;
+            return this.readPlaygroundFromDb(id, null, inspectionType);
         }
 
-        // GET Playground/byname?name=...&inspectiontype=Hauptinspektion (HI)
-        [Route("/Playground/byname")]
-        [HttpGet]
-        [Authorize]
+
         public Playground GetByName(string name, string inspectionType)
         {
-            var result = _service.GetByName(name, inspectionType);
-            return result;
+            return this.readPlaygroundFromDb(-1, name, inspectionType);
         }
 
-        // GET playground/onlynames?inspectiontype=Hauptinspektion (HI)
-        [Route("/Playground/onlynames")]
-        [HttpGet]
-        [Authorize]
-        public IEnumerable<Playground> GetOnlyNames(string inspectionType)
+
+        public IEnumerable<Playground> GetOnlyNames(string inspectionType, ClaimsPrincipal user)
         {
-            var result = _service.GetOnlyNames(inspectionType, this.User);
+
+            string? userMailAddress = null;
+            if (user != null)
+            {
+                Claim? emailClaim = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email);
+                if (emailClaim != null)
+                {
+                    userMailAddress = emailClaim.Value;
+                }
+            }
+
+            List<Playground> resultTemp = new List<Playground>();
+
+            using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
+            {
+                pgConn.Open();
+                NpgsqlCommand selectComm = pgConn.CreateCommand();
+                selectComm.CommandText = "SELECT DISTINCT ON (sp.name) " +
+                        "sp.name, insp.datum_inspektion, sp.inspektion_aussetzen_von, " +
+                        "sp.inspektion_aussetzen_bis, " +
+                        "(SELECT count(*) > 0 " +
+                        "FROM \"wgr_sp_insp_mangel\" mangel " +
+                        "JOIN \"gr_v_spielgeraete\" geraete ON mangel.fid_spielgeraet = geraete.fid " +
+                        "WHERE geraete.fid_spielplatz = sp.fid " +
+                        "AND mangel.fid_erledigung IS NULL) AS geraet_hat_mangel " +
+                        "FROM \"wgr_sp_spielplatz\" sp " +
+                        "LEFT JOIN \"wgr_sp_inspektion\" insp " +
+                        "ON insp.fid_spielplatz = sp.fid " +
+                        "ORDER BY sp.name, insp.datum_inspektion DESC";
+
+                if (userMailAddress != null && inspectionType != null &&
+                        !inspectionType.Equals("Keine Inspektion"))
+                {
+                    selectComm.CommandText = "SELECT DISTINCT ON (sp.name) " +
+                        "sp.name, insp.datum_inspektion, sp.inspektion_aussetzen_von, " +
+                        "sp.inspektion_aussetzen_bis, false " +
+                        "FROM \"wgr_sp_spielplatz\" sp " +
+                        "JOIN \"wgr_sp_inspart_kontr\" ikt ON sp.fid = ikt.fid_spielplatz " +
+                        "JOIN \"wgr_sp_kontrolleur\" kt ON kt.fid = ikt.fid_kontrolleur " +
+                        "JOIN \"wgr_sp_inspektionsart_tbd\" ina ON ina.id = ikt.id_inspektionsart " +
+                        "LEFT JOIN \"wgr_sp_inspektion\" insp ON insp.fid_spielplatz = sp.fid " +
+                        "WHERE kt.e_mail=@e_mail " +
+                        "AND ina.value=@inspektionsart " +
+                        "ORDER BY sp.name, insp.datum_inspektion DESC";
+
+                    selectComm.Parameters.AddWithValue("e_mail", userMailAddress);
+                    inspectionType = inspectionType.Substring(0, inspectionType.Length - 5);
+                    selectComm.Parameters.AddWithValue("inspektionsart", inspectionType);
+                }
+
+                using (NpgsqlDataReader reader = selectComm.ExecuteReader())
+                {
+                    Playground resultPlayground;
+                    while (reader.Read())
+                    {
+                        resultPlayground = new Playground();
+                        resultPlayground.name = reader.GetString(0);
+                        if (!reader.IsDBNull(1))
+                        {
+                            NpgsqlDate dateOfLastInspection = reader.GetDate(1);
+                            resultPlayground.dateOfLastInspection = (DateTime)dateOfLastInspection;
+                        }
+                        if (!reader.IsDBNull(2))
+                        {
+                            NpgsqlDate suspendInspectionFrom = reader.GetDate(2);
+                            resultPlayground.suspendInspectionFrom = (DateTime)suspendInspectionFrom;
+                        }
+                        if (!reader.IsDBNull(3))
+                        {
+                            NpgsqlDate suspendInspectionTo = reader.GetDate(3);
+                            resultPlayground.suspendInspectionTo = (DateTime)suspendInspectionTo;
+                        }
+                        resultPlayground.hasOpenDeviceDefects = reader.GetBoolean(4);
+
+                        _CalculateValueIsInspectionSuspended(resultPlayground);
+
+                        if (inspectionType.Equals("Keine Inspektion"))
+                        {
+                            resultTemp.Add(resultPlayground);
+                        }
+                        else if (!resultPlayground.inspectionSuspended)
+                        {
+                            resultTemp.Add(resultPlayground);
+                        }
+
+                    }
+                }
+                pgConn.Close();
+            }
+
+            List<Playground> result = new List<Playground>();
+            bool exchanged;
+            foreach (Playground playgroundTemp in resultTemp)
+            {
+                exchanged = false;
+                for (int i = 0; i < result.Count; i++)
+                {
+                    Playground playground = result[i];
+                    if (playground.name == playgroundTemp.name)
+                        if (playground.dateOfLastInspection != null
+                            && playgroundTemp.dateOfLastInspection != null)
+                        {
+                            result[i] = playground.dateOfLastInspection > playgroundTemp.dateOfLastInspection ?
+                                         playground : playgroundTemp;
+                            exchanged = true;
+                        }
+                        else if (playground.dateOfLastInspection == null
+                          && playgroundTemp.dateOfLastInspection != null)
+                        {
+                            result[i] = playgroundTemp;
+                            exchanged = true;
+                        }
+                }
+                if (!exchanged)
+                {
+                    result.Add(playgroundTemp);
+                }
+            }
+
             return result;
         }
 

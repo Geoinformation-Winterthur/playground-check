@@ -1,8 +1,9 @@
 ﻿@page "/inspections"
 @attribute [Authorize]
-@using playground_check.Controllers
 @using playground_check.Model
-@inject PlaygroundController PlaygroundController
+@using playground_check.Services
+@inject IPlaygroundService PlaygroundService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Spielplatzkontrolle - Inspektion</PageTitle>
 
@@ -37,7 +38,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        playgrounds = PlaygroundController.GetOnlyNames("Keine Inspektion");
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        playgrounds = PlaygroundService.GetOnlyNames("Keine Inspektion", user);
     }
 
     private void IncrementCount()
