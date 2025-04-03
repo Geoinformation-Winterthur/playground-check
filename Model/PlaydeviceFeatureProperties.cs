@@ -1,6 +1,6 @@
-// <copyright company="Vermessungsamt Winterthur">
+// <copyright company="Geoinformation Winterthur">
 //      Author: Edgar Butwilowski
-//      Copyright (c) Vermessungsamt Winterthur. All rights reserved.
+//      Copyright (c) Geoinformation Winterthur. All rights reserved.
 // </copyright>
 using System;
 
