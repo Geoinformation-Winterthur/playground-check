@@ -161,81 +161,86 @@ namespace playground_check.Services
 
             List<Playground> resultTemp = new List<Playground>();
 
-            using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
+            if (userMailAddress != null)
             {
-                pgConn.Open();
-                NpgsqlCommand selectComm = pgConn.CreateCommand();
-                selectComm.CommandText = "SELECT DISTINCT ON (sp.name) " +
-                        "sp.name, insp.datum_inspektion, sp.inspektion_aussetzen_von, " +
-                        "sp.inspektion_aussetzen_bis, " +
-                        "(SELECT count(*) > 0 " +
-                        "FROM \"wgr_sp_insp_mangel\" mangel " +
-                        "JOIN \"gr_v_spielgeraete\" geraete ON mangel.fid_spielgeraet = geraete.fid " +
-                        "WHERE geraete.fid_spielplatz = sp.fid " +
-                        "AND mangel.fid_erledigung IS NULL) AS geraet_hat_mangel " +
-                        "FROM \"wgr_sp_spielplatz\" sp " +
-                        "LEFT JOIN \"wgr_sp_inspektion\" insp " +
-                        "ON insp.fid_spielplatz = sp.fid " +
-                        "ORDER BY sp.name, insp.datum_inspektion DESC";
 
-                if (userMailAddress != null && inspectionType != null &&
-                        !inspectionType.Equals("Keine Inspektion"))
+                using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
                 {
+                    pgConn.Open();
+                    NpgsqlCommand selectComm = pgConn.CreateCommand();
                     selectComm.CommandText = "SELECT DISTINCT ON (sp.name) " +
-                        "sp.name, insp.datum_inspektion, sp.inspektion_aussetzen_von, " +
-                        "sp.inspektion_aussetzen_bis, false " +
-                        "FROM \"wgr_sp_spielplatz\" sp " +
-                        "JOIN \"wgr_sp_inspart_kontr\" ikt ON sp.fid = ikt.fid_spielplatz " +
-                        "JOIN \"wgr_sp_kontrolleur\" kt ON kt.fid = ikt.fid_kontrolleur " +
-                        "JOIN \"wgr_sp_inspektionsart_tbd\" ina ON ina.id = ikt.id_inspektionsart " +
-                        "LEFT JOIN \"wgr_sp_inspektion\" insp ON insp.fid_spielplatz = sp.fid " +
-                        "WHERE kt.e_mail=@e_mail " +
-                        "AND ina.value=@inspektionsart " +
-                        "ORDER BY sp.name, insp.datum_inspektion DESC";
+                            "sp.name, insp.datum_inspektion, sp.inspektion_aussetzen_von, " +
+                            "sp.inspektion_aussetzen_bis, " +
+                            "(SELECT count(*) > 0 " +
+                            "FROM \"wgr_sp_insp_mangel\" mangel " +
+                            "JOIN \"gr_v_spielgeraete\" geraete ON mangel.fid_spielgeraet = geraete.fid " +
+                            "WHERE geraete.fid_spielplatz = sp.fid " +
+                            "AND mangel.fid_erledigung IS NULL) AS geraet_hat_mangel " +
+                            "FROM \"wgr_sp_spielplatz\" sp " +
+                            "LEFT JOIN \"wgr_sp_inspektion\" insp " +
+                            "ON insp.fid_spielplatz = sp.fid " +
+                            "ORDER BY sp.name, insp.datum_inspektion DESC";
 
-                    selectComm.Parameters.AddWithValue("e_mail", userMailAddress);
-                    inspectionType = inspectionType.Substring(0, inspectionType.Length - 5);
-                    selectComm.Parameters.AddWithValue("inspektionsart", inspectionType);
-                }
-
-                using (NpgsqlDataReader reader = selectComm.ExecuteReader())
-                {
-                    Playground resultPlayground;
-                    while (reader.Read())
+                    if (inspectionType != null &&
+                            !inspectionType.Equals("Keine Inspektion"))
                     {
-                        resultPlayground = new Playground();
-                        resultPlayground.name = reader.GetString(0);
-                        if (!reader.IsDBNull(1))
-                        {
-                            NpgsqlDate dateOfLastInspection = reader.GetDate(1);
-                            resultPlayground.dateOfLastInspection = (DateTime)dateOfLastInspection;
-                        }
-                        if (!reader.IsDBNull(2))
-                        {
-                            NpgsqlDate suspendInspectionFrom = reader.GetDate(2);
-                            resultPlayground.suspendInspectionFrom = (DateTime)suspendInspectionFrom;
-                        }
-                        if (!reader.IsDBNull(3))
-                        {
-                            NpgsqlDate suspendInspectionTo = reader.GetDate(3);
-                            resultPlayground.suspendInspectionTo = (DateTime)suspendInspectionTo;
-                        }
-                        resultPlayground.hasOpenDeviceDefects = reader.GetBoolean(4);
+                        selectComm.CommandText = "SELECT DISTINCT ON (sp.name) " +
+                            "sp.name, insp.datum_inspektion, sp.inspektion_aussetzen_von, " +
+                            "sp.inspektion_aussetzen_bis, false " +
+                            "FROM \"wgr_sp_spielplatz\" sp " +
+                            "JOIN \"wgr_sp_inspart_kontr\" ikt ON sp.fid = ikt.fid_spielplatz " +
+                            "JOIN \"wgr_sp_kontrolleur\" kt ON kt.fid = ikt.fid_kontrolleur " +
+                            "JOIN \"wgr_sp_inspektionsart_tbd\" ina ON ina.id = ikt.id_inspektionsart " +
+                            "LEFT JOIN \"wgr_sp_inspektion\" insp ON insp.fid_spielplatz = sp.fid " +
+                            "WHERE kt.e_mail=@e_mail " +
+                            "AND ina.value=@inspektionsart " +
+                            "ORDER BY sp.name, insp.datum_inspektion DESC";
 
-                        _CalculateValueIsInspectionSuspended(resultPlayground);
-
-                        if (inspectionType.Equals("Keine Inspektion"))
-                        {
-                            resultTemp.Add(resultPlayground);
-                        }
-                        else if (!resultPlayground.inspectionSuspended)
-                        {
-                            resultTemp.Add(resultPlayground);
-                        }
-
+                        selectComm.Parameters.AddWithValue("e_mail", userMailAddress);
+                        inspectionType = inspectionType.Substring(0, inspectionType.Length - 5);
+                        selectComm.Parameters.AddWithValue("inspektionsart", inspectionType);
                     }
+
+                    using (NpgsqlDataReader reader = selectComm.ExecuteReader())
+                    {
+                        Playground resultPlayground;
+                        while (reader.Read())
+                        {
+                            resultPlayground = new Playground();
+                            resultPlayground.name = reader.GetString(0);
+                            if (!reader.IsDBNull(1))
+                            {
+                                NpgsqlDate dateOfLastInspection = reader.GetDate(1);
+                                resultPlayground.dateOfLastInspection = (DateTime)dateOfLastInspection;
+                            }
+                            if (!reader.IsDBNull(2))
+                            {
+                                NpgsqlDate suspendInspectionFrom = reader.GetDate(2);
+                                resultPlayground.suspendInspectionFrom = (DateTime)suspendInspectionFrom;
+                            }
+                            if (!reader.IsDBNull(3))
+                            {
+                                NpgsqlDate suspendInspectionTo = reader.GetDate(3);
+                                resultPlayground.suspendInspectionTo = (DateTime)suspendInspectionTo;
+                            }
+                            resultPlayground.hasOpenDeviceDefects = reader.GetBoolean(4);
+
+                            _CalculateValueIsInspectionSuspended(resultPlayground);
+
+                            if (inspectionType.Equals("Keine Inspektion"))
+                            {
+                                resultTemp.Add(resultPlayground);
+                            }
+                            else if (!resultPlayground.inspectionSuspended)
+                            {
+                                resultTemp.Add(resultPlayground);
+                            }
+
+                        }
+                    }
+                    pgConn.Close();
                 }
-                pgConn.Close();
+
             }
 
             List<Playground> result = new List<Playground>();
