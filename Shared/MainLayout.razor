@@ -1,7 +1,4 @@
 ﻿@inherits LayoutComponentBase
-@inject CustomAuthStateProvider AuthProvider
-@inject AuthenticationStateProvider StateProvider
-@inject NavigationManager Nav
 
 <PageTitle>Spielplatzkontrolle</PageTitle>
 
@@ -12,16 +9,6 @@
 
     <main>
         <div class="top-row px-4">
-            <AuthorizeView>
-                <Authorized>
-                    <button @onclick="Logout">Logout</button>
-                </Authorized>
-                <NotAuthorized>
-                    <NavLink class="nav-link" href="login">
-                        <span class="oi oi-plus" aria-hidden="true"></span> Login
-                    </NavLink>
-                </NotAuthorized>
-            </AuthorizeView>
         </div>
         <article class="content px-4">
             @Body
@@ -29,10 +16,3 @@
     </main>
 </div>
 
-@code {
-    private void Logout()
-    {
-        AuthProvider.MarkUserAsLoggedOut();
-        Nav.NavigateTo("/");
-    }
-}

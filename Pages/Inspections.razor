@@ -4,6 +4,8 @@
 @using playground_check.Services
 @inject IPlaygroundService PlaygroundService
 @inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+@inject AppStateProvider AppStateProvider
 
 <PageTitle>Spielplatzkontrolle - Inspektion</PageTitle>
 
@@ -27,19 +29,38 @@
     }
 </select>
 
-<p role="status">Current count: @currentCount</p>
-
-<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
-
-@foreach (var playdevice in playground.playdevices)
+@foreach (var playdevice in AppStateProvider.playground.playdevices)
 {
     <div style="margin: 2em;padding: 1em;border: 1px solid grey">
         <h3>@playdevice.properties.type.description</h3>
-        @if(playdevice.properties.cannotBeChecked){
-            <p><b>Kann nicht geprüft werden</b></p>
-        } else {
-            <p><b>Kann geprüft werden</b></p>
+        @if (playdevice.properties.cannotBeChecked)
+        {
+            <div style="margin: 0.5em;padding: 0.5em;background-color: rgb(225, 208, 247)"><b>inaktiv</b></div>
         }
+        else if (playdevice.properties.notToBeChecked)
+        {
+            <div style="margin: 0.5em;padding: 0.5em;background-color: rgb(238, 213, 144)"><b>inaktiv</b></div>
+        }
+
+        @if (!playdevice.properties.hasChecks)
+        {
+            <div style="background-color: rgb(218, 218, 218)">keine&nbsp;Kontrollen</div>
+        }
+        else
+        {
+            @if (!playdevice.properties.cannotBeChecked && !playdevice.properties.notToBeChecked
+                && playdevice.properties.hasChecks && !playdevice.properties.hasOpenChecks)
+            {
+                <div style="background-color: lightgreen" @onclick="() => playdevice.switchAllCheckBoxes(false)">erledigt
+                </div>
+            }
+            else
+            {
+                <div style="background-color: rgb(238, 171, 144)" @onclick="() => playdevice.switchAllCheckBoxes(true)">
+                    pendent</div>
+            }
+        }
+
         @if (playdevice.properties.pictureBase64String != null)
         {
             <div>
@@ -56,25 +77,26 @@
             </div>
         }
         <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
+        <div>
+            <NavLink class="btn btn-primary" href="@($"/playdevice/{playdevice.properties.fid}")">Öffnen</NavLink>
+        </div>
     </div>
 }
 
-@code {
-    private string selectedInspectionType = "";
-    private int currentCount = 0;
-    private IEnumerable<Playground> playgrounds = new Playground[0];
-    private Playground playground = new Playground();
+<div><button class="btn btn-primary">Abschliessen</button></div>
 
+@code {
+    private IEnumerable<Playground> playgrounds = new Playground[0];
 
     private async Task OnInspectionTypeChanged(ChangeEventArgs e)
     {
-        selectedInspectionType = e.Value?.ToString() ?? "";
+        AppStateProvider.selectedInspectionType = e.Value?.ToString() ?? "";
 
-        if (selectedInspectionType != "")
+        if (AppStateProvider.selectedInspectionType != "")
         {
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
             var user = authState.User;
-            playgrounds = PlaygroundService.GetOnlyNames(selectedInspectionType, user);
+            playgrounds = PlaygroundService.GetOnlyNames(AppStateProvider.selectedInspectionType, user);
         }
     }
 
@@ -84,16 +106,15 @@
 
         if (playgroundName != "")
         {
-            playground = PlaygroundService.GetByName(playgroundName, selectedInspectionType);
+            AppStateProvider.playground = PlaygroundService.GetByName(playgroundName, AppStateProvider.selectedInspectionType);
+            foreach(var playdevice in AppStateProvider.playground.playdevices){
+                playdevice.evaluateChecks();
+            }
         }
         else
         {
-            playground = new Playground();
+            AppStateProvider.playground = new Playground();
         }
     }
 
-    private void IncrementCount()
-    {
-        currentCount++;
-    }
 }

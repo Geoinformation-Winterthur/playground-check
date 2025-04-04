@@ -1,43 +1,133 @@
-@page "/playdevice"
+@page "/playdevice/{fid:int}"
 @attribute [Authorize]
 @using playground_check.Model
 @using playground_check.Services
 @inject IPlaygroundService PlaygroundService
-@inject AuthenticationStateProvider AuthStateProvider
+@inject AppStateProvider AppStateProvider
 
 <PageTitle>Spielplatzkontrolle - Spielgerät</PageTitle>
 
-<h1>Spielgerät</h1>
+<h1>Prüfung Spielgerät: @playdevice.properties.type.description</h1>
 
-<div style="margin: 2em;padding: 1em;border: 1px solid grey">
-    <h3>@playdevice.properties.type.description</h3>
+<p style="font-size:150%;color:purple;">
+    <b>Inspektionsart:</b> @AppStateProvider.selectedInspectionType
+</p>
+
+@if (playdevice.properties.pictureBase64String != null)
+{
+    <div>
+        <img title="Foto des Spielger&auml;ts"
+            style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+            src="@playdevice.properties.pictureBase64String">
+    </div>
+}
+
+@if (!playdevice.properties.hasChecks)
+{
+    <div>
+        <p style="color: green; margin-bottom: 2em;background-color: rgb(249, 255, 245);border: solid;padding: 1em;">
+            Es sind keine Pr&uuml;fungen zu diesem Ger&auml;t vorhanden oder aktiv.</p>
+    </div>
+}
+else
+{
+    <p style="margin: 2em;">
+        <input type="checkbox" @bind="playdevice.properties.cannotBeChecked" />
+        <label>Nicht prüfbar</label>
+    </p>
     @if (playdevice.properties.cannotBeChecked)
     {
-        <p><b>Kann nicht geprüft werden</b></p>
-    }
-    else
-    {
-        <p><b>Kann geprüft werden</b></p>
-    }
-    @if (playdevice.properties.pictureBase64String != null)
-    {
         <div>
-            <img title="Foto des Spielger&auml;ts"
-                style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-                src="@playdevice.properties.pictureBase64String">
-            @if (!playdevice.properties.notToBeChecked)
-            {
-                <div>
-                    <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
-                    <input type="file" accept="image/png" style="padding: 1em;">
-                </div>
-            }
+            <form-field style="width: 100%;">
+                <label>Begründung, weshalb das Gerät nicht prüfbar ist</label><br>
+                <textarea matInput maxlength="255" @bind="playdevice.properties.cannotBeCheckedReason"
+                    placeholder="Begründung, weshalb das Gerät nicht prüfbar ist..." required></textarea>
+            </form-field>
+        </div>
+        <div *ngIf="playdevice.properties.cannotBeChecked && !playdevice.properties.cannotBeCheckedReason"
+            style="padding: 1em;border: 2px solid;color: rgb(156, 2, 2);background-color: rgb(255, 223, 226);">
+            Die Angabe einer Begründung ist obligatorisch, um den Bericht senden zu können.
         </div>
     }
-    <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
-</div>
+    @if (!playdevice.properties.cannotBeChecked)
+    {
+        <p>
+            <span><b>Kontrolleur:</b>
+                <AuthorizeView>
+                    <Authorized>
+                        <span> @context.User.FindFirst("firstName")?.Value
+                            @context.User.FindFirst("lastName")?.Value</span>
+                    </Authorized>
+                </AuthorizeView>
+            </span><br>
+            <span><b>Datum der Inspektion:</b>
+                @playdevice.properties.dateOfService.ToString("dd.MM.yyyy")
+            </span>
+        </p>
+        <p style="color: red; margin-bottom: 2em;background-color: rgb(255, 249, 246);border: solid;padding: 1em;">
+            ACHTUNG! Prüfungen müssen immer gemäss den vorliegenden
+            Anweisungen und gemäss der Montageanleitung für das jeweilige Produkt erfolgen.</p>
+
+        @if (playdevice.properties.generalInspectionCriteria.Length != 0)
+        {
+            <h2>Allgemeine Inspektionskriterien</h2>
+            @foreach (var inspectionCriterion in playdevice.properties.generalInspectionCriteria)
+            {
+                <div style="margin: 1em;padding: 1em; border: 1px solid grey">
+                    <h4>@inspectionCriterion.realm
+                        @if (inspectionCriterion.checkShortText != "")
+                        {
+                            <span>-</span>
+                            @inspectionCriterion.checkShortText
+                        }
+                    </h4>
+                    <b>Pr&uuml;fung</b><br>
+                    <div>
+                        <div style="padding: 0.5em;border-style: solid;color: red;"><b>Prüfung</b>:
+                            @inspectionCriterion.check</div>
+                        <input type="checkbox" @bind="inspectionCriterion.currentInspectionReport.inspectionDone"
+                            style="margin:10px;" />
+                        <label>Prüfung erledigt</label>
+                        <form-field>
+                            <label>Kommentar zur Prüfung</label>
+                            <textarea matInput maxlength="255" @bind="inspectionCriterion.currentInspectionReport.inspectionComment"
+                                placeholder="Bei Bedarf bitte Prüfkommentar..."></textarea>
+                        </form-field>
+                    </div>
+                    <b>Wartung</b><br>
+                    <div style="padding: 0.5em;color: rgb(39, 39, 223);">
+                        &#10132;&nbsp;<b>Wartung</b>: @inspectionCriterion.maintenance
+                    </div>
+                    <input type="checkbox" @bind="inspectionCriterion.currentInspectionReport.maintenanceDone"
+                        style="margin:10px;" />
+                    <label>Wartung erledigt</label>
+                    <form-field>
+                        <label>Kommentar zur Wartung</label>
+                        <textarea matInput maxlength="255" @bind="inspectionCriterion.currentInspectionReport.maintenanceComment"
+                            placeholder="Bei Bedarf bitte Wartungskommentar..."></textarea>
+                    </form-field>
+                </div>
+            }
+        }
+    }
+
+}
+
 
 
 @code {
-    private PlaydeviceFeature playdevice = new PlaydeviceFeature();
+    [Parameter]
+    public int fid { get; set; }
+    private PlaydeviceFeature playdevice;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        playdevice = AppStateProvider.playground.playdevices
+            .FirstOrDefault(p => p.properties.fid == fid);
+        if (playdevice == null)
+            playdevice = new PlaydeviceFeature();
+
+        playdevice.properties.dateOfService = DateTime.Today;
+    }
 }

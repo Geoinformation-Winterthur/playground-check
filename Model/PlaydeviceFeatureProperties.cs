@@ -27,9 +27,13 @@ namespace playground_check.Model
         public string commentRecommendedYearOfRenovation { get; set; } = "";
         public bool notToBeChecked { get; set; } = false;
         public bool cannotBeChecked { get; set; } = false;
+        public bool hasChecks { get; set; } = false;
+        public bool hasOpenChecks { get; set; } = false;
+        public bool hasOldReports { get; set; } = false;
         public string cannotBeCheckedReason { get; set; } = "";
 
-        public Defect[] defects { get; set; }
+        public Defect[] defects { get; set; }        
+        public bool someOldDefectsAreDone { get; set; } = false;
         public InspectionReport[] lastInspectionReports { get; set; }
                     = new InspectionReport[0];
         public InspectionReport[] nextToLastInspectionReports { get; set; }

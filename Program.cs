@@ -45,6 +45,8 @@ try
     builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
             provider.GetRequiredService<CustomAuthStateProvider>());
 
+    // Register services:
+    builder.Services.AddScoped<AppStateProvider>();
     builder.Services.AddScoped<IPlaygroundService, PlaygroundService>();
 
     builder.Services.AddControllers();
