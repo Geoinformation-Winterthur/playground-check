@@ -17,7 +17,7 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
     {
         var claims = new[]
         {
-            new Claim(ClaimTypes.Name, user.mailAddress),
+            new Claim(ClaimTypes.Email, user.mailAddress),
             new Claim(ClaimTypes.Role, role),
             new Claim("firstName", user.firstName),
             new Claim("lastName", user.lastName)
