@@ -1,48 +1,99 @@
 ﻿@page "/defects"
+@attribute [Authorize]
+@using playground_check.Model
+@using playground_check.Services
+@inject IPlaygroundService PlaygroundService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Spielplatzkontrolle - Mängel</PageTitle>
 
-@using playground_check.Data
-@inject WeatherForecastService ForecastService
-
 <h1>Mängel</h1>
 
-<p>This component demonstrates fetching data from a service.</p>
+<label for="inspectiontype">Inspektionsart</label>
+<select name="inspectiontype" @onchange="OnInspectionTypeChanged" class="form-select">
+    <option value="">Bitte auswählen</option>
+    <option value="Keine Inspektion">Keine Inspektion</option>
+    <option value="Visuelle Inspektion (VI)">Visuelle Inspektion (VI)</option>
+    <option value="Operative Inspektion (OI)">Operative Inspektion (OI)</option>
+    <option value="Hauptinspektion (HI)">Hauptinspektion (HI)</option>
+</select>
 
-@if (forecasts == null)
+<label for="playground">Spielplatz</label>
+<select name="playground" @onchange="OnPlaygroundChanged" class="form-select">
+    <option value="">Bitte auswählen</option>
+    @foreach (var playground in playgrounds)
+    {
+        <option value="@playground.name">@playground.name</option>
+    }
+</select>
+
+<p role="status">Current count: @currentCount</p>
+
+<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+
+@foreach (var playdevice in playground.playdevices)
 {
-    <p><em>Loading...</em></p>
-}
-else
-{
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Temp. (C)</th>
-                <th>Temp. (F)</th>
-                <th>Summary</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var forecast in forecasts)
-            {
-                <tr>
-                    <td>@forecast.Date.ToShortDateString()</td>
-                    <td>@forecast.TemperatureC</td>
-                    <td>@forecast.TemperatureF</td>
-                    <td>@forecast.Summary</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div style="margin: 2em;padding: 1em;border: 1px solid grey">
+        <h3>@playdevice.properties.type.description</h3>
+        @if(playdevice.properties.cannotBeChecked){
+            <p><b>Kann nicht geprüft werden</b></p>
+        } else {
+            <p><b>Kann geprüft werden</b></p>
+        }
+        @if (playdevice.properties.pictureBase64String != null)
+        {
+            <div>
+                <img title="Foto des Spielger&auml;ts"
+                    style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+                    src="@playdevice.properties.pictureBase64String">
+                @if (!playdevice.properties.notToBeChecked)
+                {
+                    <div>
+                        <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
+                        <input type="file" accept="image/png" style="padding: 1em;">
+                    </div>
+                }
+            </div>
+        }
+        <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
+    </div>
 }
 
 @code {
-    private WeatherForecast[]? forecasts;
+    private string selectedInspectionType = "";
+    private int currentCount = 0;
+    private IEnumerable<Playground> playgrounds = new Playground[0];
+    private Playground playground = new Playground();
 
-    protected override async Task OnInitializedAsync()
+
+    private async Task OnInspectionTypeChanged(ChangeEventArgs e)
     {
-        forecasts = await ForecastService.GetForecastAsync(DateTime.Now);
+        selectedInspectionType = e.Value?.ToString() ?? "";
+
+        if (selectedInspectionType != "")
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            playgrounds = PlaygroundService.GetOnlyNames(selectedInspectionType, user);
+        }
+    }
+
+    private async Task OnPlaygroundChanged(ChangeEventArgs e)
+    {
+        string playgroundName = e.Value?.ToString() ?? "";
+
+        if (playgroundName != "")
+        {
+            playground = PlaygroundService.GetByName(playgroundName, selectedInspectionType);
+        }
+        else
+        {
+            playground = new Playground();
+        }
+    }
+
+    private void IncrementCount()
+    {
+        currentCount++;
     }
 }

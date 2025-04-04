@@ -1,0 +1,43 @@
+@page "/playdevice"
+@attribute [Authorize]
+@using playground_check.Model
+@using playground_check.Services
+@inject IPlaygroundService PlaygroundService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Spielplatzkontrolle - Spielgerät</PageTitle>
+
+<h1>Spielgerät</h1>
+
+<div style="margin: 2em;padding: 1em;border: 1px solid grey">
+    <h3>@playdevice.properties.type.description</h3>
+    @if (playdevice.properties.cannotBeChecked)
+    {
+        <p><b>Kann nicht geprüft werden</b></p>
+    }
+    else
+    {
+        <p><b>Kann geprüft werden</b></p>
+    }
+    @if (playdevice.properties.pictureBase64String != null)
+    {
+        <div>
+            <img title="Foto des Spielger&auml;ts"
+                style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+                src="@playdevice.properties.pictureBase64String">
+            @if (!playdevice.properties.notToBeChecked)
+            {
+                <div>
+                    <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
+                    <input type="file" accept="image/png" style="padding: 1em;">
+                </div>
+            }
+        </div>
+    }
+    <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
+</div>
+
+
+@code {
+    private PlaydeviceFeature playdevice = new PlaydeviceFeature();
+}
