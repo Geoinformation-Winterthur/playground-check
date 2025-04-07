@@ -3,16 +3,19 @@
 @using playground_check.Model
 @using playground_check.Services
 @inject IPlaygroundService PlaygroundService
+@inject IInspectionService InspectionService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager NavigationManager
 @inject AppStateProvider AppStateProvider
+@inject SnackbarService SnackbarService
 
 <PageTitle>Spielplatzkontrolle - Inspektion</PageTitle>
 
 <h1>Inspektion</h1>
 
 <label for="inspectiontype">Inspektionsart</label>
-<select name="inspectiontype" @onchange="OnInspectionTypeChanged" class="form-select">
+<select name="inspectiontype" @bind="AppStateProvider.selectedInspectionType" @bind:after="OnInspectionTypeChanged"
+    class="form-select">
     <option value="">Bitte auswählen</option>
     <option value="Keine Inspektion">Keine Inspektion</option>
     <option value="Visuelle Inspektion (VI)">Visuelle Inspektion (VI)</option>
@@ -21,7 +24,8 @@
 </select>
 
 <label for="playground">Spielplatz</label>
-<select name="playground" @onchange="OnPlaygroundChanged" class="form-select">
+<select name="playground" @bind="AppStateProvider.selectedPlaygroundName" @bind:after="OnPlaygroundChanged"
+    class="form-select">
     <option value="">Bitte auswählen</option>
     @foreach (var playground in playgrounds)
     {
@@ -83,15 +87,32 @@
     </div>
 }
 
-<div><button class="btn btn-primary">Abschliessen</button></div>
+@if (AppStateProvider.playground.playdevices.Length != 0)
+{
+    <div style="margin: 1em;">
+        <button class="btn btn-primary" @onclick="FinishInspection" disabled="@(!CanFinish())">Abschliessen</button>
+        @if(!string.IsNullOrWhiteSpace(errorText)){            
+            @if(errorText.StartsWith("SPK")){
+                <span style="color: red;margin: 1em;font-style: bold;">@ErrorMessageDictionary.Get(errorText)</span>
+            } else {
+                <span style="color: green;margin: 1em;font-style: bold;">Bericht erfolgreich gesendet</span>
+            }
+        }
+    </div>
+}
 
 @code {
     private IEnumerable<Playground> playgrounds = new Playground[0];
 
-    private async Task OnInspectionTypeChanged(ChangeEventArgs e)
-    {
-        AppStateProvider.selectedInspectionType = e.Value?.ToString() ?? "";
+    private string errorText;
 
+    protected override async Task OnInitializedAsync()
+    {
+        errorText = "";
+    }
+
+    private async Task OnInspectionTypeChanged()
+    {
         if (AppStateProvider.selectedInspectionType != "")
         {
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -100,20 +121,168 @@
         }
     }
 
-    private async Task OnPlaygroundChanged(ChangeEventArgs e)
+    private async Task OnPlaygroundChanged()
     {
-        string playgroundName = e.Value?.ToString() ?? "";
-
-        if (playgroundName != "")
+        if (AppStateProvider.selectedPlaygroundName != "")
         {
-            AppStateProvider.playground = PlaygroundService.GetByName(playgroundName, AppStateProvider.selectedInspectionType);
-            foreach(var playdevice in AppStateProvider.playground.playdevices){
+            AppStateProvider.playground = PlaygroundService
+            .GetByName(AppStateProvider.selectedPlaygroundName,
+            AppStateProvider.selectedInspectionType);
+            foreach (var playdevice in AppStateProvider.playground.playdevices)
+            {
                 playdevice.evaluateChecks();
             }
         }
         else
         {
             AppStateProvider.playground = new Playground();
+        }
+    }
+
+    private bool CanFinish()
+    {
+        if (AppStateProvider.playground == null)
+            return false;
+
+        foreach (var playdevice in AppStateProvider.playground.playdevices)
+        {
+            // Wenn Gerät prüfbar ist
+            if (!playdevice.properties.notToBeChecked &&
+            !playdevice.properties.cannotBeChecked)
+            {
+                // Checks auswerten
+                playdevice.evaluateChecks();
+                if (playdevice.properties.hasOpenChecks)
+                    return false;
+            }
+            // Wenn Gerät nicht prüfbar ist, aber kein Grund angegeben
+            else if (playdevice.properties.cannotBeChecked &&
+            string.IsNullOrWhiteSpace(playdevice.properties.cannotBeCheckedReason))
+                return false;
+        }
+
+        return true;
+    }
+
+    private async Task FinishInspection()
+    {
+
+        var inspectionReports = new List<InspectionReport>();
+
+        foreach (var playdevice in AppStateProvider.playground.playdevices)
+        {
+            DateTime dateOfService = DateTime.Now;
+            
+            // Nur Geräte berücksichtigen, die nicht als "nicht zu prüfen" markiert sind
+            if (!playdevice.properties.notToBeChecked && !playdevice.properties.cannotBeChecked)
+            {
+                // Allgemeine Prüfung
+                _CollectInspectionReports(
+                playdevice.properties.generalInspectionCriteria,
+                inspectionReports,
+                playdevice.properties.fid,
+                0,
+                "",
+                dateOfService
+                );
+
+                // Hauptfallschutz-Prüfung
+                _CollectInspectionReports(
+                playdevice.properties.mainFallProtectionInspectionCriteria,
+                inspectionReports,
+                playdevice.properties.fid,
+                0,
+                "Hauptfallschutz",
+                dateOfService
+                );
+
+                // Nebenfallschutz-Prüfung
+                _CollectInspectionReports(
+                playdevice.properties.secondaryFallProtectionInspectionCriteria,
+                inspectionReports,
+                playdevice.properties.fid,
+                0,
+                "Nebenfallschutz",
+                dateOfService
+                );
+            }
+        }
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        InspectionReport[] inspectionReportsArray = inspectionReports.ToArray();
+        var result = InspectionService.SendReport(inspectionReportsArray, user, false);
+        if (string.IsNullOrWhiteSpace(result.errorMessage))
+        {
+            await SnackbarService.ShowAsync("Bericht erfolgreich gesendet", 3000);
+            AppStateProvider.selectedInspectionType = "";
+            AppStateProvider.selectedPlaygroundName = "";
+            this.playgrounds = new Playground[0];
+        } else {
+            errorText = result.errorMessage;
+            await SnackbarService.ShowAsync(result.errorMessage, 3000);
+        }
+    }
+
+    /// <summary>
+    /// Verarbeitet eine Liste von <see cref="InspectionCriterion"/> und extrahiert daraus gültige
+    /// <see cref="InspectionReport"/>-Objekte, ergänzt diese mit Metadaten (FIDs, Datum, Fallschutztyp)
+    /// und fügt sie der Ziel-Liste <paramref name="inspectionReports"/> hinzu.
+    /// </summary>
+    /// <param name="inspectionCriteria">
+    /// Eine Liste von Inspektionskriterien, die jeweils einen zugehörigen <see cref="InspectionReport"/>
+    /// enthalten können.
+    /// </param>
+    /// <param name="inspectionReports">
+    /// Die Ziel-Liste, in die alle vervollständigten <see cref="InspectionReport"/>-Instanzen eingefügt werden.
+    /// </param>
+    /// <param name="playdeviceFid">
+    /// Die eindeutige ID des Spielgeräts, auf das sich die Prüfung bezieht.
+    /// </param>
+    /// <param name="playdeviceDetailFid">
+    /// Die Detail-ID des Spielgeräts (z. B. für Komponenten, Module etc.).
+    /// </param>
+    /// <param name="fallProtectionType">
+    /// Der Typ der Fallschutzvorkehrung (z. B. Sand, Gummi, Holzschnitzel).
+    /// </param>
+    /// <param name="playdeviceDateOfService">
+    /// Das Datum, an dem das Spielgerät zuletzt in Betrieb genommen oder geprüft wurde (optional).
+    /// Wird, falls vorhanden, intern auf 12:00 Uhr mittags gesetzt (zur Vermeidung von Zeitzoneneffekten).
+    /// </param>
+    private void _CollectInspectionReports(
+        InspectionCriterion[] inspectionCriteria,
+        List<InspectionReport> inspectionReports,
+        int playdeviceFid,
+        int playdeviceDetailFid,
+        string fallProtectionType,
+        DateTime playdeviceDateOfService)
+    {
+        // Sicherstellen, dass die Eingabeliste gültig ist.
+        if (inspectionCriteria == null)
+            return;
+
+        // Schleife über alle Inspektionskriterien
+        foreach (var inspectionCriterion in inspectionCriteria)
+        {
+            // Nur solche Kriterien berücksichtigen, die tatsächlich einen Prüfbericht enthalten
+            if (inspectionCriterion.currentInspectionReport != null)
+            {
+                InspectionReport report = inspectionCriterion.currentInspectionReport;
+
+                // Spielgerät-IDs setzen
+                report.playdeviceFid = playdeviceFid;
+                report.playdeviceDetailFid = playdeviceDetailFid;
+
+                // Datum übernehmen
+                report.playdeviceDateOfService = playdeviceDateOfService;
+
+                // Fallschutztyp setzen
+                report.fallProtectionType = fallProtectionType;
+
+                // Den Bericht in die Ziel-Liste aufnehmen
+                inspectionReports.Add(report);
+            }
         }
     }
 

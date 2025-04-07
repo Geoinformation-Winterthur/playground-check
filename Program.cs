@@ -35,7 +35,7 @@ try
     // Add services to the container.
     builder.Services.AddRazorPages();
     builder.Services.AddServerSideBlazor();
-    builder.Services.AddSingleton<WeatherForecastService>();
+    builder.Services.AddSingleton<SnackbarService>();
 
     // Add services for user login:
     builder.Services.AddAuthorizationCore();
@@ -48,6 +48,7 @@ try
     // Register services:
     builder.Services.AddScoped<AppStateProvider>();
     builder.Services.AddScoped<IPlaygroundService, PlaygroundService>();
+    builder.Services.AddScoped<IInspectionService, InspectionService>();
 
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();

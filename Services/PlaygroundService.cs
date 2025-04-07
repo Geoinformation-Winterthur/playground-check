@@ -3,7 +3,6 @@
 //      Copyright (c) Geoinformation Winterthur. All rights reserved.
 // </copyright>
 using System.Security.Claims;
-using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -275,9 +274,6 @@ namespace playground_check.Services
             return result;
         }
 
-        // GET playground/mapimage?x=...&y=...
-        [Route("/Playground/mapimage")]
-        [HttpGet]
         public async Task<string> GetMapImage(double x, double y)
         {
             if (x != 0 && y != 0)
