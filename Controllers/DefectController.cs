@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 
 using playground_check.Model;
+using playground_check.Services;
 
 namespace playground_check.Controllers
 {
@@ -22,11 +23,11 @@ namespace playground_check.Controllers
     [Route("[controller]")]
     public class DefectController : ControllerBase
     {
-        private readonly ILogger<DefectController> _logger;
+        private readonly IDefectService _service;
 
-        public DefectController(ILogger<DefectController> logger)
+        public DefectController(IDefectService service)
         {
-            _logger = logger;
+            _service = service;
         }
 
         // POST defect/
@@ -34,35 +35,7 @@ namespace playground_check.Controllers
         [Authorize]
         public ActionResult<ErrorMessage> Post([FromBody] Defect[] defects, bool dryRun = false)
         {
-            ErrorMessage result = new ErrorMessage();
-            User userFromDb = LoginController.getAuthorizedUser(this.User, dryRun);
-            if (userFromDb == null || userFromDb.fid == 0)
-            {
-                return Unauthorized("Sie sind entweder nicht als Kontrolleur in der " +
-                    "Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung.");
-            }
-
-            if (defects != null)
-            {
-                try
-                {
-                    DefectDAO defectDao = new DefectDAO();
-                    foreach (Defect defect in defects)
-                    {
-                        defectDao.Update(defect, userFromDb, dryRun);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex.Message);
-                    result.errorMessage = "SPK-3";
-                }
-            }
-            else
-            {
-                result.errorMessage = "SPK-4";
-            }
-            return Ok(result);
+            return Ok(_service.Update(defects, this.User, dryRun));
         }
 
 

@@ -70,14 +70,37 @@ namespace playground_check.Model
             return result;
         }
 
-        internal Defect[] Read(int playdeviceFid)
+        internal Defect Read(int tid)
+        {
+            Defect result = null;
+
+            using (NpgsqlConnection pgConn = new(AppConfig.connectionString))
+            {
+                pgConn.Open();
+                NpgsqlCommand selectDefectsComm = this._CreateCommandForSelect(
+                            tid, pgConn);
+
+                using (NpgsqlDataReader reader = selectDefectsComm.ExecuteReader())
+                {
+                    if (reader.Read())
+                        result = _ReadDefect(reader);
+                }
+
+                if(result != null)
+                    result.pictures = ReadAllPictures(result.tid, pgConn);
+
+            }
+            return result;
+        }
+
+        internal Defect[] ReadAllOfPlaydevice(int playdeviceFid)
         {
             List<Defect> result = new();
 
             using (NpgsqlConnection pgConn = new(AppConfig.connectionString))
             {
                 pgConn.Open();
-                NpgsqlCommand selectDefectsComm = this._CreateCommandForSelect(
+                NpgsqlCommand selectDefectsComm = this._CreateCommandForSelectByPlaydevice(
                             playdeviceFid, pgConn);
 
                 using (NpgsqlDataReader reader = selectDefectsComm.ExecuteReader())
@@ -157,7 +180,19 @@ namespace playground_check.Model
             return selectDefectPriorityIds;
         }
 
-        private NpgsqlCommand _CreateCommandForSelect(int playdeviceFid, NpgsqlConnection pgConn)
+        private NpgsqlCommand _CreateCommandForSelect(int tid, NpgsqlConnection pgConn)
+        {
+            NpgsqlCommand selectDefectCommand = pgConn.CreateCommand();
+            selectDefectCommand.CommandText = "SELECT m.tid, d.short_value, d.value, m.beschrieb, " +
+                    "m.datum_erledigung, m.fid_erledigung, m.bemerkunng, m.datum, " +
+                    "m.id_zustaendig_behebung " +
+                    "FROM \"wgr_sp_insp_mangel\" m " +
+                    "LEFT JOIN \"wgr_sp_dringlichkeit_tbd\" d ON m.id_dringlichkeit = d.id " +
+                    "WHERE m.tid=" + tid;
+            return selectDefectCommand;
+        }
+
+        private NpgsqlCommand _CreateCommandForSelectByPlaydevice(int playdeviceFid, NpgsqlConnection pgConn)
         {
             NpgsqlCommand selectDefectsCommand = pgConn.CreateCommand();
             selectDefectsCommand.CommandText = "SELECT m.tid, d.short_value, d.value, m.beschrieb, " +

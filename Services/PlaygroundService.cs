@@ -381,6 +381,24 @@ namespace playground_check.Services
 
             return currentPlayground;
         }
+        public void PutPlaydevicePicture(int playdeviceFid, string pictureBase64String, bool dryRun)
+        {
+            if (dryRun) return;
+
+            // Base64-String in Byte-Array umwandeln
+            byte[] pictureBytes = Encoding.UTF8.GetBytes(pictureBase64String);
+
+            using var pgConn = new NpgsqlConnection(AppConfig.connectionString);
+            pgConn.Open();
+
+            using var updatePictureCommand = pgConn.CreateCommand();
+            updatePictureCommand.CommandText = "UPDATE \"gr_v_spielgeraete\" " +
+                                               "SET picture_base64 = @picture_base64 " +
+                                               "WHERE fid = @fid";
+            updatePictureCommand.Parameters.AddWithValue("fid", playdeviceFid);
+            updatePictureCommand.Parameters.AddWithValue("picture_base64", pictureBytes);
+            updatePictureCommand.ExecuteNonQuery();
+        }
 
         private PlaydeviceFeature[] _ReadPlaydevicesOfPlayground(int playGroundId)
         {
@@ -521,7 +539,7 @@ namespace playground_check.Services
                 playdevice.properties.nextToLastInspectionReports = nextToLastInspectionReports.ToArray();
 
                 DefectDAO defectDao = new();
-                playdevice.properties.defects = defectDao.Read(playdevice.properties.fid);
+                playdevice.properties.defects = defectDao.ReadAllOfPlaydevice(playdevice.properties.fid);
             }
         }
 

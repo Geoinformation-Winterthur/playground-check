@@ -10,8 +10,7 @@
 <h1>Spielgeräteübersicht</h1>
 
 <label for="playground">Spielplatz</label>
-<select name="playground" @bind="playground.name" @bind:after="OnPlaygroundChanged"
-    class="form-select">
+<select name="playground" @bind="playground.name" @bind:after="OnPlaygroundChanged" class="form-select">
     <option value="">Bitte auswählen</option>
     @foreach (var playground in playgrounds)
     {
@@ -37,12 +36,12 @@
             <div>
                 <img title="Foto des Spielger&auml;ts"
                     style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-                    src="@playdevice.properties.pictureBase64String">
-                                    @if (!playdevice.properties.notToBeChecked)
+                    src="https://localhost:7014/Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
+                @if (!playdevice.properties.notToBeChecked)
                 {
                     <div>
                         <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
-                        <input type="file" accept="image/png" style="padding: 1em;">
+                        <InputFile OnChange="e => UploadImage(playdevice.properties.fid, e)" accept="image/png" style="padding: 1em;" />
                     </div>
                 }
             </div>
@@ -67,7 +66,7 @@
         if (playground.name != "")
         {
             playground = PlaygroundService
-                .GetByName(playground.name, "Keine Inspektion");
+            .GetByName(playground.name, "Keine Inspektion");
         }
         else
         {
@@ -75,4 +74,17 @@
         }
     }
 
+    private async Task UploadImage(int playdeviceFid, InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            string base64String = Convert.ToBase64String(ms.ToArray());
+            base64String = $"data:image/png;base64,{base64String}";
+            PlaygroundService.PutPlaydevicePicture(playdeviceFid, base64String, false);
+        }
+    }
 }

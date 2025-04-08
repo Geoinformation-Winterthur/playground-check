@@ -9,6 +9,7 @@ namespace playground_check.Model
         public int tid { get; set; }
         public int playdeviceFid { get; set; }
         public string priority { get; set; } = "";
+        public bool done = false;
         public string defectDescription { get; set; } = "";
         public DateTime? dateCreation { get; set; }
         public DateTime? dateDone { get; set; }

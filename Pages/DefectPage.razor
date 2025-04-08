@@ -1,0 +1,157 @@
+@page "/defect/{tid:int}"
+@using playground_check.Model
+@using playground_check.Services
+@attribute [Authorize]
+@inject IDefectService DefectService
+
+<PageTitle>Spielplatzkontrolle - Mangel</PageTitle>
+
+<h1>Mangel @defect.tid</h1>
+
+<p><b>Erstellt am: @defect.dateCreation?.ToString("dd.MM.yyyy")</b></p>
+
+<div style="width: 100%;margin: 0.5em;">
+    <h4>Beschrieb des Mangels</h4>
+    <textarea matInput maxlength="255" @bind="defect.defectDescription" placeholder="Beschrieb des Mangels..."
+        disabled="@(tid == -1)"></textarea>
+</div>
+@if (string.IsNullOrWhiteSpace(defect.defectDescription))
+{
+    <p style="border: solid 1px;color: red;padding: 0.5em;">
+        Dieser Mangel/Änderung wird nicht an das Datenzentrum übertragen, da kein Beschrieb erfasst wurde.
+    </p>
+}
+<form-field appearance="fill" style="margin:0.5em;">
+    <label>Dringlichkeit</label>
+    <select name="urgancy" @bind="defect.priority" class="form-select">
+        <option value="A (sofort)">A (sofort)</option>
+        <option value="B (mittelfristig)">B (mittelfristig)</option>
+        <option value="C (Ohne Gefahr, muss im Folgejahr beurteilt werden)">C (Ohne Gefahr, muss im Folgejahr beurteilt werden)</option>
+    </select>
+</form-field>
+<form-field appearance="fill" style="margin:0.5em;">
+    <label>Zuständigkeit</label>
+    <select name="responsible" @bind="defect.defectsResponsibleBodyId" class="form-select">
+        <option value="1">Revier</option>
+        <option value="2">Spielplatzverantwortlicher</option>
+        <option value="3">Projektleiter</option>
+    </select>
+</form-field>
+<div style="margin: 2em;padding: 1em;border: 1px dashed rgb(55, 124, 227);background-color: rgb(214, 227, 242);">
+    <p style="color: rgb(28, 89, 180);">Fotos des Mangels</p>
+    @if (getDefectPictures(false).Length < 3)
+    {
+        <input type="file" accept="image/png" @onchange="UploadImage" style="padding: 2em;">
+    }
+    @foreach (var picture in getDefectPictures(false))
+    {
+        <a href="@picture.base64StringPictureThumb" target="_blank">
+            <img width="30%" src=@picture.base64StringPictureThumb
+                style="margin: 2px;border: 1px solid rgb(160, 188, 230);">
+        </a>
+    }
+</div>
+<hr>
+<p><b>Erledigung des Mangels:</b></p>
+<p>
+    <input type="checkbox" @bind="defect.done" @onclick="SwitchDefectStatus" style="margin:10px;" />
+        Mangel erledigt
+</p>
+@if (defect.done)
+{
+    <div style="margin: 2em;padding: 1em;border: 1px dashed rgb(218, 104, 69);background-color: rgb(245, 239, 245);">
+        <p style="color: rgb(172, 73, 43);">Fotos nach Mangelbeseitigung</p>
+        @if (getDefectPictures(true).Length < 3)
+        {
+            <input type="file" accept="image/png" @onchange="UploadImage" style="padding: 2em;">
+            @foreach (var picture in getDefectPictures(true))
+            {
+                <a href="@picture.base64StringPictureThumb" target="_blank">
+                    <img width="30%" src="@picture.base64StringPictureThumb"
+                        style="margin: 2px;border: 1px solid rgb(238, 206, 197);">
+                </a>
+            }
+        }
+    </div>
+}
+<p><span><i>Datum der Erledigung:</i>
+        @if (defect.dateDone != null)
+        {
+            <span>
+                @defect.dateDone?.ToString("dd.MM.yyyy")
+            </span>
+        }
+        else
+        {
+            <span>Noch nicht erledigt</span>
+        }
+    </span></p>
+<form-field style="width: 100%;margin: 0.5em;">
+    <label>Bemerkung zur Erledigung</label>
+    <textarea matInput maxlength="255" @bind="defect.defectComment"
+        placeholder="Bemerkung zur Erledigung..."></textarea>
+</form-field>
+<p><i>Erledigt durch</i>:
+@if(defect.dateDone == null) {
+    <span>Noch nicht erledigt</span>
+} else {
+        <AuthorizeView>
+        <Authorized>
+            <span>@context.User.FindFirst("firstName")?.Value @context.User.FindFirst("lastName")?.Value</span>
+        </Authorized>
+        <NotAuthorized>
+            <span>keine Benutzerdaten</span>
+        </NotAuthorized>
+    </AuthorizeView>
+}
+</p>
+
+@code {
+    [Parameter]
+    public int tid { get; set; }
+    private Defect defect;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (tid > 0)
+        {
+            defect = DefectService.Get(tid);
+        }
+        else
+        {
+            defect = new Defect();
+        }
+        if (defect == null)
+            defect = new Defect();
+    }
+
+    private void SwitchDefectStatus()
+    {
+        if (defect.dateDone != null)
+        {
+            defect.dateDone = null;
+        }
+        else
+        {
+            defect.dateDone = DateTime.Now;
+        }
+    }
+
+    private DefectPicture[] getDefectPictures(bool afterFixing)
+    {
+        List<DefectPicture> picturesTemp = new List<DefectPicture>();
+        foreach (var defectPicture in defect.pictures)
+        {
+            if (defectPicture.afterFixing == afterFixing)
+            {
+                picturesTemp.Add(defectPicture);
+            }
+        }
+        return picturesTemp.ToArray();
+    }
+
+    private void UploadImage()
+    {
+    }
+
+}

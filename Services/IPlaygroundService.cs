@@ -10,4 +10,5 @@ public interface IPlaygroundService
     Task<PlaygroundFeature> GetPlaygroundAsFeature(string uuid);
     Playground GetById(int id, string inspectionType);
     Playground GetByName(string name, string inspectionType);
+    void PutPlaydevicePicture(int playdeviceFid, string pictureBase64String, bool dryRun);
 }

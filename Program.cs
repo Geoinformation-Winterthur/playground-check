@@ -49,6 +49,7 @@ try
     builder.Services.AddScoped<AppStateProvider>();
     builder.Services.AddScoped<IPlaygroundService, PlaygroundService>();
     builder.Services.AddScoped<IInspectionService, InspectionService>();
+    builder.Services.AddScoped<IDefectService, DefectService>();
 
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();

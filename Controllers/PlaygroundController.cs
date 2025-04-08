@@ -224,7 +224,7 @@ namespace playground_check.Controllers
                 selectComm.CommandText = "SELECT spg.fid, spg.bemerkungen, spg.geom, " +
                         "gart.short_value, gart.value, spg.norm, lief.name, " +
                         "spg.empfohlenes_sanierungsjahr, spg.bemerkung_empf_sanierung, " +
-                        "spg.picture_base64, spg.nicht_zu_pruefen, spg.bau_dat, " +
+                        "spg.nicht_zu_pruefen, spg.bau_dat, " +
                         "spg.id_sanierungsart " +
                         "FROM \"gr_v_spielgeraete\" spg " +
                         "LEFT JOIN \"wgr_sp_spielgeraeteart_tbd\" gart ON spg.id_geraeteart = gart.id " +
@@ -259,29 +259,19 @@ namespace playground_check.Controllers
                         if (!reader.IsDBNull(7)) currentPlaydevice.properties.recommendedYearOfRenovation = reader.GetInt32(7);
                         currentPlaydevice.properties.commentRecommendedYearOfRenovation = reader.IsDBNull(8) ? "" : reader.GetString(8);
 
-                        byte[] pictureBase64Bytes = reader.IsDBNull(9) ? new byte[0] : (byte[])reader[9];
-                        if (pictureBase64Bytes.Length != 0)
-                        {
-                            currentPlaydevice.properties.pictureBase64String = Encoding.UTF8
-                                                .GetString(pictureBase64Bytes, 0, pictureBase64Bytes.Length);
-                        }
-                        else
-                        {
-                            currentPlaydevice.properties.pictureBase64String = "";
-                        }
+                        currentPlaydevice.properties.pictureBase64String = "";
 
+                        currentPlaydevice.properties.notToBeChecked = reader.IsDBNull(9) ? false : reader.GetBoolean(9);
 
-                        currentPlaydevice.properties.notToBeChecked = reader.IsDBNull(10) ? false : reader.GetBoolean(10);
-
-                        if (!reader.IsDBNull(11))
+                        if (!reader.IsDBNull(10))
                         {
-                            NpgsqlDate constructionDate = reader.GetDate(11);
+                            NpgsqlDate constructionDate = reader.GetDate(10);
                             currentPlaydevice.properties.constructionDate = (DateTime)constructionDate;
                         }
 
-                        if (!reader.IsDBNull(12))
+                        if (!reader.IsDBNull(11))
                         {
-                            int idRenovationType = reader.GetInt32(12);
+                            int idRenovationType = reader.GetInt32(11);
                             if (idRenovationType == 1)
                                 currentPlaydevice.properties.renovationType = "Totalsanierung";
                             else if (idRenovationType == 2)
@@ -352,7 +342,7 @@ namespace playground_check.Controllers
                 playdevice.properties.nextToLastInspectionReports = nextToLastInspectionReports.ToArray();
 
                 DefectDAO defectDao = new();
-                playdevice.properties.defects = defectDao.Read(playdevice.properties.fid);
+                playdevice.properties.defects = defectDao.ReadAllOfPlaydevice(playdevice.properties.fid);
             }
         }
 
