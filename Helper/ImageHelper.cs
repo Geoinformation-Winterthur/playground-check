@@ -5,8 +5,6 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats.Png;
-using System.IO;
-using System;
 
 namespace playground_check.Helper;
 

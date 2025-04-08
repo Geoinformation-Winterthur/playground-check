@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using playground_check.Model
 @using playground_check.Services
+@using playground_check.Helper
 @inject IPlaygroundService PlaygroundService
 @inject AuthenticationStateProvider AuthStateProvider
 
@@ -79,11 +80,12 @@
         var file = e.File;
         if (file != null)
         {
-            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var stream = file.OpenReadStream();
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
             string base64String = Convert.ToBase64String(ms.ToArray());
-            base64String = $"data:image/png;base64,{base64String}";
+            base64String = ImageHelper.DownsizeImage(base64String, 1200, 800);
+            base64String = ImageHelper.CropImage(base64String, 1, 1);
             PlaygroundService.PutPlaydevicePicture(playdeviceFid, base64String, false);
         }
     }
