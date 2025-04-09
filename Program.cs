@@ -12,6 +12,7 @@ using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Components.Authorization;
 using playground_check.Controllers;
 using playground_check.Services;
+using playground_check.Service;
 
 Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(AppConfig.Configuration)
@@ -50,6 +51,7 @@ try
     builder.Services.AddScoped<IPlaygroundService, PlaygroundService>();
     builder.Services.AddScoped<IInspectionService, InspectionService>();
     builder.Services.AddScoped<IDefectService, DefectService>();
+    builder.Services.AddScoped<IUserService, UserService>();
 
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();

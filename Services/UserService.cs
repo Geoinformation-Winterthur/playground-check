@@ -11,26 +11,23 @@ using playground_check.Helper;
 using System.Security.Claims;
 using System.Net.Mail;
 
-namespace playground_check.Controllers;
+namespace playground_check.Service;
 
-[ApiController]
-[Route("Account/[controller]")]
-public class UsersController : ControllerBase
+public class UserService : IUserService
 {
-    private readonly ILogger<UsersController> _logger;
+    private readonly ILogger<UserService> _logger;
 
-    public UsersController(ILogger<UsersController> logger)
+    public UserService(ILogger<UserService> logger)
     {
         _logger = logger;
     }
 
+    public User GetUser(string email)
+    {
+        return this.GetUsers(email).First<User>();
+    }
 
-    // GET /account/users/
-    // GET /account/users/?email=...
-    // GET /account/users/?uuid=...
-    [HttpGet]
-    [Authorize(Roles = "administrator")]
-    public ActionResult<User[]> GetUsers(string? email)
+    public User[] GetUsers(string? email)
     {
         List<User> usersFromDb = new List<User>();
         // get data of current user from database:
@@ -84,12 +81,9 @@ public class UsersController : ControllerBase
         return usersFromDb.ToArray<User>();
     }
 
-    // PUT /account/users/?changepassphrase=false
-    [HttpPut]
-    [Authorize(Roles = "administrator")]
-    public ActionResult<ErrorMessage> UpdateUser([FromBody] User user, bool changePassphrase = false)
+    public User UpdateUser(User user, bool changePassphrase = false)
     {
-        ErrorMessage errorResult = new ErrorMessage();
+        User result = new User();
         try
         {
             string userPassphrase = user.passPhrase;
@@ -97,8 +91,8 @@ public class UsersController : ControllerBase
             if (user == null)
             {
                 _logger.LogInformation("No user data provided by user in update user process.");
-                errorResult.errorMessage = "SPK-3";
-                return Ok(errorResult);
+                result.errorMessage = "SPK-3";
+                return result;
             }
 
             if (user.mailAddress == null)
@@ -110,8 +104,8 @@ public class UsersController : ControllerBase
             if (user.mailAddress == "")
             {
                 _logger.LogWarning("No user data provided by user in update user process.");
-                errorResult.errorMessage = "SPK-3";
-                return Ok(errorResult);
+                result.errorMessage = "SPK-3";
+                return result;
             }
 
             try
@@ -121,15 +115,8 @@ public class UsersController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogInformation(ex.Message);
-                errorResult.errorMessage = "SPK-3";
-                return Ok(errorResult);
-            }
-
-            if (!User.IsInRole("administrator"))
-            {
-                _logger.LogWarning("A user who is not an administrator tried to change user data.");
-                errorResult.errorMessage = "SPK-3";
-                return Ok(errorResult);
+                result.errorMessage = "SPK-3";
+                return result;
             }
 
             User userInDb = new User();
@@ -138,8 +125,8 @@ public class UsersController : ControllerBase
             if (usersInDb == null || usersInDb.Length != 1 || usersInDb[0] == null)
             {
                 _logger.LogWarning("Updating user " + user.mailAddress + " is not possible since user is not in the database.");
-                errorResult.errorMessage = "SPK-3";
-                return Ok(errorResult);
+                result.errorMessage = "SPK-3";
+                return result;
             }
 
             userInDb = usersInDb[0];
@@ -152,16 +139,16 @@ public class UsersController : ControllerBase
                     {
                         _logger.LogWarning("Administrator tried to change role of last administrator. " +
                                 "Role cannot be changed since there would be no administrator anymore.");
-                        errorResult.errorMessage = "SPK-3";
-                        return Ok(errorResult);
+                        result.errorMessage = "SPK-3";
+                        return result;
                     }
 
                     if (!user.active)
                     {
                         _logger.LogWarning("Administrator tried to set last administrator inactive. " +
                                 "This is not allowed.");
-                        errorResult.errorMessage = "SPK-3";
-                        return Ok(errorResult);
+                        result.errorMessage = "SPK-3";
+                        return result;
                     }
                 }
             }
@@ -190,8 +177,8 @@ public class UsersController : ControllerBase
                     if (userPassphrase.Length < 8)
                     {
                         _logger.LogWarning("Not enough user data provided in update user process.");
-                        errorResult.errorMessage = "SPK-9";
-                        return Ok(errorResult);
+                        result.errorMessage = "SPK-9";
+                        return result;
                     }
                 }
 
@@ -211,7 +198,7 @@ public class UsersController : ControllerBase
                 if (noAffectedRowsStep1 == 1 &&
                     (!changePassphrase || noAffectedRowsStep2 == 1))
                 {
-                    return Ok(user);
+                    return user;
                 }
 
             }
@@ -220,20 +207,16 @@ public class UsersController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex.Message);
-            errorResult.errorMessage = "SPK-3";
-            return Ok(errorResult);
+            result.errorMessage = "SPK-3";
+            return result;
         }
 
         _logger.LogError("Fatal error in update user process");
-        errorResult.errorMessage = "SPK-3";
-        return Ok(errorResult);
+        result.errorMessage = "SPK-3";
+        return result;
     }
 
-
-    // DELETE /users?email=...
-    [HttpDelete]
-    [Authorize(Roles = "administrator")]
-    public ActionResult<ErrorMessage> DeleteUser(string email)
+    public ErrorMessage DeleteUser(string email)
     {
         ErrorMessage errorResult = new ErrorMessage();
 
@@ -242,7 +225,7 @@ public class UsersController : ControllerBase
             _logger.LogWarning("No user data provided by user in delete user process. " +
                         "Thus process is canceled, no user is deleted.");
             errorResult.errorMessage = "SPK-3";
-            return Ok(errorResult);
+            return errorResult;
         }
 
         email = email.ToLower().Trim();
@@ -252,17 +235,17 @@ public class UsersController : ControllerBase
             _logger.LogWarning("No user data provided by user in delete user process. " +
                         "Thus process is canceled, no user is deleted.");
             errorResult.errorMessage = "SPK-3";
-            return Ok(errorResult);
+            return errorResult;
         }
 
-        User userInDb = new User();
+        User userInDb;
         ActionResult<User[]> usersInDbResult = this.GetUsers(email);
         User[]? usersInDb = usersInDbResult.Value;
         if (usersInDb == null || usersInDb.Length != 1 || usersInDb[0] == null)
         {
             _logger.LogWarning("User " + email + " cannot be deleted since this user is not in the database.");
             errorResult.errorMessage = "SPK-3";
-            return Ok(errorResult);
+            return errorResult;
         }
         else
         {
@@ -273,7 +256,7 @@ public class UsersController : ControllerBase
                 {
                     _logger.LogWarning("User tried to delete last administrator. Last administrator cannot be removed.");
                     errorResult.errorMessage = "SPK-3";
-                    return Ok(errorResult);
+                    return errorResult;
                 }
             }
             using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
@@ -291,14 +274,14 @@ public class UsersController : ControllerBase
 
                 if (noAffectedRows == 1)
                 {
-                    return Ok();
+                    return errorResult;
                 }
             }
         }
 
         _logger.LogError("Fatal error.");
         errorResult.errorMessage = "SPK-3";
-        return Ok(errorResult);
+        return errorResult;
     }
 
     private static int _countNumberOfActiveAdmins()
