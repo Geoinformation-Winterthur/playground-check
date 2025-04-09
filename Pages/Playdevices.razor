@@ -20,7 +20,7 @@
 </select>
 
 @if (playground.documentsOfAcceptanceFids != null &&
-playground.documentsOfAcceptanceFids.Length != 0)
+        playground.documentsOfAcceptanceFids.Length != 0)
 {
     <div
         style="background-color: rgb(219, 235, 224);padding-left: 1em;padding-right: 1em;padding-bottom: 1em;margin-top: 2em;border: 1px dotted rgb(87, 235, 136);">
@@ -31,6 +31,24 @@ playground.documentsOfAcceptanceFids.Length != 0)
                 <a title="Link auf Kartenausschnitt Spielger&auml;t" target="_blank"
                     href="Document/@documentOfAcceptanceFid?type=abnahme">
                     @documentOfAcceptanceFid
+                </a>&nbsp;
+            </span>
+        }
+    </div>
+}
+
+@if (playground.certificateDocumentsFids != null &&
+        playground.certificateDocumentsFids.Length != 0)
+{
+    <div
+        style="background-color: rgb(230, 244, 255);padding-left: 1em;padding-right: 1em;padding-bottom: 1em;margin-top: 2em;border: 1px dotted blue;">
+        <h4>Zertifikatsdokumente</h4>
+        @foreach (int certificateDocumentFid in playground.certificateDocumentsFids)
+        {
+            <span>
+                <a title="Link auf Kartenausschnitt Spielger&auml;t" target="_blank"
+                    href="Document/@certificateDocumentFid?type=zertifikat">
+                    @certificateDocumentFid
                 </a>&nbsp;
             </span>
         }
