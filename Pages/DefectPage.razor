@@ -1,4 +1,4 @@
-@page "/defect/{tid:int}"
+@page "/defect/{playdeviceFid:int}/{tid:int}"
 @using playground_check.Model
 @using playground_check.Services
 @attribute [Authorize]
@@ -7,21 +7,20 @@
 
 <PageTitle>Spielplatzkontrolle - Mangel</PageTitle>
 
-<h1>Mangel @defect.tid</h1>
+@if(defect.tid != 0)
+{
+    <h1>Mangel @defect.tid</h1>
+} else {
+    <h1>Neuer Mangel</h1>
+}
 
 <p><b>Erstellt am: @defect.dateCreation?.ToString("dd.MM.yyyy")</b></p>
 
 <div style="width: 100%;margin: 0.5em;">
     <h4>Beschrieb des Mangels</h4>
     <textarea matInput maxlength="255" @bind="defect.defectDescription" placeholder="Beschrieb des Mangels..."
-        disabled="@(tid == -1)"></textarea>
+        disabled="@(tid == -1)" style="width: 100%;"></textarea>
 </div>
-@if (string.IsNullOrWhiteSpace(defect.defectDescription))
-{
-    <p style="border: solid 1px;color: red;padding: 0.5em;">
-        Dieser Mangel/Änderung wird nicht an das Datenzentrum übertragen, da kein Beschrieb erfasst wurde.
-    </p>
-}
 <form-field appearance="fill" style="margin:0.5em;">
     <label>Dringlichkeit</label>
     <select name="urgancy" @bind="defect.priority" class="form-select">
@@ -56,7 +55,7 @@
 <p><b>Erledigung des Mangels:</b></p>
 <p>
     <input type="checkbox" @bind="defect.done" @onclick="SwitchDefectStatus" style="margin:10px;" />
-        Mangel erledigt
+    Mangel erledigt
 </p>
 @if (defect.done)
 {
@@ -75,7 +74,7 @@
         }
     </div>
 }
-<p><span><i>Datum der Erledigung:</i>
+<p><span><i>Datum der Erledigung: </i>
         @if (defect.dateDone != null)
         {
             <span>
@@ -93,26 +92,40 @@
         placeholder="Bemerkung zur Erledigung..."></textarea>
 </form-field>
 <p><i>Erledigt durch</i>:
-@if(defect.dateDone == null) {
-    <span>Noch nicht erledigt</span>
-} else {
+    @if (defect.dateDone == null)
+    {
+        <span>Noch nicht erledigt</span>
+    }
+    else
+    {
         <AuthorizeView>
-        <Authorized>
-            <span>@context.User.FindFirst("firstName")?.Value @context.User.FindFirst("lastName")?.Value</span>
-        </Authorized>
-        <NotAuthorized>
-            <span>keine Benutzerdaten</span>
-        </NotAuthorized>
-    </AuthorizeView>
-}
+            <Authorized>
+                <span>@context.User.FindFirst("firstName")?.Value @context.User.FindFirst("lastName")?.Value</span>
+            </Authorized>
+            <NotAuthorized>
+                <span>keine Benutzerdaten</span>
+            </NotAuthorized>
+        </AuthorizeView>
+    }
 </p>
 
-<button class="btn btn-primary" @onclick="UpdateDefect">Speichern</button>
+@if (defect.tid != 0)
+{
+    <button class="btn btn-primary" @onclick="UpdateDefect" style="margin: 2em;">Speichern</button>
+}
+else
+{
+    <button class="btn btn-primary" @onclick="CreateDefect" style="margin: 2em;">Anlegen</button>
+}
 
 @code {
     [Parameter]
     public int tid { get; set; }
-    private Defect defect;
+
+    [Parameter]
+    public int playdeviceFid { get; set; }
+
+    private Defect defect = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,9 +136,9 @@
         else
         {
             defect = new Defect();
+            defect.playdeviceFid = playdeviceFid;
+            defect.dateCreation = DateTime.Now;
         }
-        if (defect == null)
-            defect = new Defect();
     }
 
     private void SwitchDefectStatus()
@@ -153,11 +166,19 @@
         return picturesTemp.ToArray();
     }
 
+    private async Task CreateDefect()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        DefectService.Create(defect, user);
+    }
+
+
     private async Task UpdateDefect()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
-        DefectService.Update(new[] { defect }, user);
+        DefectService.Update(defect, user);
     }
 
     private void UploadImage()

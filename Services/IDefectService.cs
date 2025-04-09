@@ -6,6 +6,10 @@ namespace playground_check.Services;
 public interface IDefectService
 {
     Defect Get(int tid);
-    ErrorMessage Update(Defect[] defects,
+
+    ErrorMessage Create(Defect defect,
+                ClaimsPrincipal user, bool dryRun = false);
+
+    ErrorMessage Update(Defect defect,
                 ClaimsPrincipal user, bool dryRun = false);
 }

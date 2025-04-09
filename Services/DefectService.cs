@@ -30,21 +30,44 @@ namespace playground_check.Services
             return defectDAO.Read(tid);
         }
 
-        public ErrorMessage Update(Defect[] defects,
+        public ErrorMessage Create(Defect defect,
                 ClaimsPrincipal user, bool dryRun = false)
         {
             ErrorMessage result = new ErrorMessage();
             User userFromDb = LoginController.getAuthorizedUser(user, dryRun);
 
-            if (defects != null && userFromDb != null)
+            if (defect != null && userFromDb != null)
             {
                 try
                 {
                     DefectDAO defectDao = new DefectDAO();
-                    foreach (Defect defect in defects)
-                    {
-                        defectDao.Update(defect, userFromDb, dryRun);
-                    }
+                    defectDao.Insert(defect, userFromDb);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex.Message);
+                    result.errorMessage = "SPK-3";
+                }
+            }
+            else
+            {
+                result.errorMessage = "SPK-4";
+            }
+            return result;
+        }
+
+        public ErrorMessage Update(Defect defect,
+                ClaimsPrincipal user, bool dryRun = false)
+        {
+            ErrorMessage result = new ErrorMessage();
+            User userFromDb = LoginController.getAuthorizedUser(user, dryRun);
+
+            if (defect != null && userFromDb != null)
+            {
+                try
+                {
+                    DefectDAO defectDao = new DefectDAO();
+                    defectDao.Update(defect, userFromDb, dryRun);
                 }
                 catch (Exception ex)
                 {

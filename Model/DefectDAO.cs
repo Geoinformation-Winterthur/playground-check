@@ -66,7 +66,7 @@ namespace playground_check.Model
         }
 
         internal void Insert(Defect defect, User userFromDb,
-                    int? inspectionTid, bool dryRun = false)
+                    bool dryRun = false)
         {
             if (!string.IsNullOrWhiteSpace(defect.defectDescription))
             {
@@ -74,7 +74,7 @@ namespace playground_check.Model
                 pgConn.Open();
 
                 DbCommand insertDefectCommand = CreateCommandForInsert(defect,
-                                inspectionTid, pgConn, userFromDb);
+                                pgConn, userFromDb);
                 int defectNewTid = -1;
                 if (!dryRun) defectNewTid = (int)insertDefectCommand.ExecuteScalar();
 
@@ -199,19 +199,18 @@ namespace playground_check.Model
             return result.ToArray();
         }
 
-        private static DbCommand CreateCommandForInsert(Defect defect, int? inspectionTid,
+        private static DbCommand CreateCommandForInsert(Defect defect,
                         NpgsqlConnection pgConn, User userFromDb)
         {
             NpgsqlCommand insertDefectCommand = pgConn.CreateCommand();
             insertDefectCommand.CommandText = "INSERT INTO \"wgr_sp_insp_mangel\" " +
-                    "(tid, fid_spielgeraet, tid_inspektion, id_dringlichkeit, beschrieb, bemerkunng, " +
+                    "(tid, fid_spielgeraet, id_dringlichkeit, beschrieb, bemerkunng, " +
                     "datum_erledigung, fid_erledigung, id_zustaendig_behebung)" +
                     "VALUES (" +
                     "(SELECT CASE WHEN max(tid) IS NULL THEN 1 ELSE max(tid) + 1 END FROM \"wgr_sp_insp_mangel\"), " +
-                    "@fid_spielgeraet, @tid_inspektion, @dringlichkeit, @beschrieb, " +
+                    "@fid_spielgeraet, @dringlichkeit, @beschrieb, " +
                     "@bemerkung, @datum_erledigung, @fid_erledigung, @id_zustaendig_behebung) RETURNING tid";
 
-            insertDefectCommand.Parameters.AddWithValue("tid_inspektion", inspectionTid);
             insertDefectCommand.Parameters.AddWithValue("fid_spielgeraet", defect.playdeviceFid);
             insertDefectCommand.Parameters.AddWithValue("dringlichkeit", defect.priority);
             insertDefectCommand.Parameters.AddWithValue("beschrieb", defect.defectDescription ?? "");
