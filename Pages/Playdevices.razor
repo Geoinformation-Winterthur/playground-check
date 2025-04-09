@@ -19,6 +19,24 @@
     }
 </select>
 
+@if (playground.documentsOfAcceptanceFids != null &&
+playground.documentsOfAcceptanceFids.Length != 0)
+{
+    <div
+        style="background-color: rgb(219, 235, 224);padding-left: 1em;padding-right: 1em;padding-bottom: 1em;margin-top: 2em;border: 1px dotted rgb(87, 235, 136);">
+        <h4>Abnahmedokumente</h4>
+        @foreach (int documentOfAcceptanceFid in playground.documentsOfAcceptanceFids)
+        {
+            <span>
+                <a title="Link auf Kartenausschnitt Spielger&auml;t" target="_blank"
+                    href="Document/@documentOfAcceptanceFid?type=abnahme">
+                    @documentOfAcceptanceFid
+                </a>&nbsp;
+            </span>
+        }
+    </div>
+}
+
 @foreach (var playdevice in playground.playdevices)
 {
     <div style="margin: 2em;padding: 1em;border: 1px solid grey">

@@ -62,7 +62,8 @@ public class DocumentController : ControllerBase
                 NpgsqlDataReader reader = selectPdfCommand.ExecuteReader();
                 if (reader.Read())
                 {
-                    byte[] pdfBytes = (byte[])reader[0];
+                    byte[] pdfBytes = [];
+                    if(!reader.IsDBNull(0)) pdfBytes = (byte[])reader[0];
                     return File(pdfBytes, "application/pdf");
                 }
             }

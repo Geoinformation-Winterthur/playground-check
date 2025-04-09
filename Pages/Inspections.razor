@@ -76,8 +76,7 @@
         @if (playdevice.properties.pictureBase64String != null)
         {
             <div>
-                <a title="Link auf Kartenausschnitt Spielger&auml;t"
-                    target="_blank"
+                <a title="Link auf Kartenausschnitt Spielger&auml;t" target="_blank"
                     href="https://stadtplan.winterthur.ch/mini?gbapp=portal&topic=Spielplatzkarte&infoactive=1&maponly=1&onlymap=1&scale=200&x=@playdevice.geometry.coordinates[0]&y=@playdevice.geometry.coordinates[1]&back=Hintergrundkarte_LK_AV_Situationsplan">
                     <img title="Foto des Spielger&auml;ts"
                         style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
@@ -113,12 +112,7 @@
 @code {
     private IEnumerable<Playground> playgrounds = new Playground[0];
 
-    private string errorText;
-
-    protected override async Task OnInitializedAsync()
-    {
-        errorText = "";
-    }
+    private string errorText = "";
 
     private async Task OnInspectionTypeChanged()
     {
