@@ -29,10 +29,12 @@
     @foreach (var playground in playgrounds)
     {
         <option value="@playground.name">@playground.name&nbsp;
-            @if(!playground.dateOfLastInspection.ToString("yyyy.MM.dd").StartsWith("0001")){
+            @if (!playground.dateOfLastInspection.ToString("yyyy.MM.dd").StartsWith("0001"))
+            {
                 <span>(letzte: @playground.dateOfLastInspection.ToString("dd.MM.yyyy"))</span>
             }
-            @if(playground.inspectionSuspended){
+            @if (playground.inspectionSuspended)
+            {
                 <span>(ausgesetzt)</span>
             }
         </option>
@@ -74,9 +76,13 @@
         @if (playdevice.properties.pictureBase64String != null)
         {
             <div>
-            <img title="Foto des Spielger&auml;ts"
-                style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-                src="https://localhost:7014/Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
+                <a title="Link auf Kartenausschnitt Spielger&auml;t"
+                    target="_blank"
+                    href="https://stadtplan.winterthur.ch/mini?gbapp=portal&topic=Spielplatzkarte&infoactive=1&maponly=1&onlymap=1&scale=200&x=@playdevice.geometry.coordinates[0]&y=@playdevice.geometry.coordinates[1]&back=Hintergrundkarte_LK_AV_Situationsplan">
+                    <img title="Foto des Spielger&auml;ts"
+                        style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+                        src="https://localhost:7014/Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
+                </a>
             </div>
         }
         <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
@@ -90,10 +96,14 @@
 {
     <div style="margin: 1em;">
         <button class="btn btn-primary" @onclick="FinishInspection" disabled="@(!CanFinish())">Abschliessen</button>
-        @if(!string.IsNullOrWhiteSpace(errorText)){            
-            @if(errorText.StartsWith("SPK")){
+        @if (!string.IsNullOrWhiteSpace(errorText))
+        {
+            @if (errorText.StartsWith("SPK"))
+            {
                 <span style="color: red;margin: 1em;font-style: bold;">@ErrorMessageDictionary.Get(errorText)</span>
-            } else {
+            }
+            else
+            {
                 <span style="color: green;margin: 1em;font-style: bold;">Bericht erfolgreich gesendet</span>
             }
         }
@@ -171,7 +181,7 @@
         foreach (var playdevice in AppStateProvider.playground.playdevices)
         {
             DateTime dateOfService = DateTime.Now;
-            
+
             // Nur Geräte berücksichtigen, die nicht als "nicht zu prüfen" markiert sind
             if (!playdevice.properties.notToBeChecked && !playdevice.properties.cannotBeChecked)
             {
@@ -218,7 +228,9 @@
             AppStateProvider.selectedInspectionType = "";
             AppStateProvider.selectedPlaygroundName = "";
             this.playgrounds = new Playground[0];
-        } else {
+        }
+        else
+        {
             errorText = result.errorMessage;
             await SnackbarService.ShowAsync(result.errorMessage, 3000);
         }
@@ -250,12 +262,12 @@
     /// Wird, falls vorhanden, intern auf 12:00 Uhr mittags gesetzt (zur Vermeidung von Zeitzoneneffekten).
     /// </param>
     private void _CollectInspectionReports(
-        InspectionCriterion[] inspectionCriteria,
-        List<InspectionReport> inspectionReports,
-        int playdeviceFid,
-        int playdeviceDetailFid,
-        string fallProtectionType,
-        DateTime playdeviceDateOfService)
+    InspectionCriterion[] inspectionCriteria,
+    List<InspectionReport> inspectionReports,
+    int playdeviceFid,
+    int playdeviceDetailFid,
+    string fallProtectionType,
+    DateTime playdeviceDateOfService)
     {
         // Sicherstellen, dass die Eingabeliste gültig ist.
         if (inspectionCriteria == null)
