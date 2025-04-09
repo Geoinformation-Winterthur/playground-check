@@ -37,12 +37,13 @@
             <div>
                 <img title="Foto des Spielger&auml;ts"
                     style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-                    src="https://localhost:7014/Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
+                    src="https://localhost:7014/Playdevice/@playdevice.properties.fid/Picture?dryRun=false&t=@(imageCacheBuster.TryGetValue(playdevice.properties.fid, out var val) ? val : "")">
                 @if (!playdevice.properties.notToBeChecked)
                 {
                     <div>
                         <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
-                        <InputFile OnChange="e => UploadImage(playdevice.properties.fid, e)" accept="image/png" style="padding: 1em;" />
+                        <InputFile OnChange="e => UploadImage(playdevice.properties.fid, e)" accept="image/png"
+                            style="padding: 1em;" />
                     </div>
                 }
             </div>
@@ -54,6 +55,7 @@
 @code {
     private IEnumerable<Playground> playgrounds = new Playground[0];
     private Playground playground = new Playground();
+    private Dictionary<int, string> imageCacheBuster = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -80,13 +82,18 @@
         var file = e.File;
         if (file != null)
         {
-            using var stream = file.OpenReadStream();
+            using var stream = file.OpenReadStream(50 * 1024 * 1024); // 50MB max picture size
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
             string base64String = Convert.ToBase64String(ms.ToArray());
             base64String = ImageHelper.DownsizeImage(base64String, 1200, 800);
-            base64String = ImageHelper.CropImage(base64String, 1, 1);
-            PlaygroundService.PutPlaydevicePicture(playdeviceFid, base64String, false);
+
+            await PlaygroundService.PutPlaydevicePictureAsync(playdeviceFid, base64String, false);
+
+            // Cache-Buster aktualisieren
+            imageCacheBuster[playdeviceFid] = DateTime.UtcNow.Ticks.ToString();
+            StateHasChanged(); // Bild neu rendern
         }
     }
+
 }
