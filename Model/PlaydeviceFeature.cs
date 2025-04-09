@@ -10,9 +10,6 @@ namespace playground_check.Model
         public PlaydeviceFeatureProperties properties { get; set; }
         public Geometry geometry { get; set; } = new Geometry();
 
-        public PlaydeviceDetail[] playdeviceDetails { get; set; }
-                    = new PlaydeviceDetail[0];
-
         public PlaydeviceFeature()
         {
             this.type = "Feature";
@@ -66,53 +63,6 @@ namespace playground_check.Model
                     inspectionReport.maintenanceDone = false;
                 }
             }
-
-            foreach (var detail in this.playdeviceDetails)
-            {
-                foreach (var inspectionCriterion in detail.properties.generalInspectionCriteria)
-                {
-                    InspectionReport inspectionReport = inspectionCriterion.currentInspectionReport;
-                    if (activate)
-                    {
-                        inspectionReport.inspectionDone = true;
-                        inspectionReport.maintenanceDone = true;
-                    }
-                    else
-                    {
-                        inspectionReport.inspectionDone = false;
-                        inspectionReport.maintenanceDone = false;
-                    }
-                }
-                foreach (var mainFallInspCriterion in detail.properties.mainFallProtectionInspectionCriteria)
-                {
-                    InspectionReport inspectionReport = mainFallInspCriterion.currentInspectionReport;
-                    if (activate)
-                    {
-                        inspectionReport.inspectionDone = true;
-                        inspectionReport.maintenanceDone = true;
-                    }
-                    else
-                    {
-                        inspectionReport.inspectionDone = false;
-                        inspectionReport.maintenanceDone = false;
-                    }
-                }
-
-                foreach (var secFallInspCriterion in detail.properties.secondaryFallProtectionInspectionCriteria)
-                {
-                    InspectionReport inspectionReport = secFallInspCriterion.currentInspectionReport;
-                    if (activate)
-                    {
-                        inspectionReport.inspectionDone = true;
-                        inspectionReport.maintenanceDone = true;
-                    }
-                    else
-                    {
-                        inspectionReport.inspectionDone = false;
-                        inspectionReport.maintenanceDone = false;
-                    }
-                }
-            }
             this.evaluateChecks();
         }
 
@@ -135,11 +85,6 @@ namespace playground_check.Model
                 this.properties.hasChecks = true;
                 return;
             }
-            foreach (var thisDetail in this.playdeviceDetails)
-            {
-                bool hasDetailChecks = thisDetail.evaluateHasChecks();
-                this.properties.hasChecks = hasDetailChecks;
-            }
         }
 
         /**
@@ -154,16 +99,6 @@ namespace playground_check.Model
 
             // check if given this has checks (inspection criteria):
             this.evaluateHasChecks();
-
-            bool hasDetailOpenChecks = false;
-            foreach (var thisDetail in this.playdeviceDetails)
-            {
-                hasDetailOpenChecks = thisDetail.evaluateChecks();
-                if (!this.properties.hasOpenChecks)
-                {
-                    this.properties.hasOpenChecks = hasDetailOpenChecks;
-                }
-            }
 
             if (this.properties.hasChecks)
             {
