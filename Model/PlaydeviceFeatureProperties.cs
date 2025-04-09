@@ -39,9 +39,6 @@ namespace playground_check.Model
         public InspectionReport[] nextToLastInspectionReports { get; set; }
                     = new InspectionReport[0];
 
-        public string pictureBase64String { get; set; } = "";
-        public string mapImageBase64String { get; set; } = "";
-
         public class Type
         {
             public string name { get; set; } = "";

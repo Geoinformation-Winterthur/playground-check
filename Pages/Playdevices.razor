@@ -20,7 +20,7 @@
 </select>
 
 @if (playground.documentsOfAcceptanceFids != null &&
-        playground.documentsOfAcceptanceFids.Length != 0)
+playground.documentsOfAcceptanceFids.Length != 0)
 {
     <div
         style="background-color: rgb(219, 235, 224);padding-left: 1em;padding-right: 1em;padding-bottom: 1em;margin-top: 2em;border: 1px dotted rgb(87, 235, 136);">
@@ -38,7 +38,7 @@
 }
 
 @if (playground.certificateDocumentsFids != null &&
-        playground.certificateDocumentsFids.Length != 0)
+playground.certificateDocumentsFids.Length != 0)
 {
     <div
         style="background-color: rgb(230, 244, 255);padding-left: 1em;padding-right: 1em;padding-bottom: 1em;margin-top: 2em;border: 1px dotted blue;">
@@ -68,22 +68,19 @@
             <div style="margin: 0.5em;padding: 0.5em;background-color: rgb(238, 213, 144)"><b>inaktiv</b></div>
         }
 
-        @if (playdevice.properties.pictureBase64String != null)
-        {
-            <div>
-                <img title="Foto des Spielger&auml;ts"
-                    style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-                    src="Playdevice/@playdevice.properties.fid/Picture?t=@(imageCacheBuster.TryGetValue(playdevice.properties.fid, out var val) ? val : "")">
-                @if (!playdevice.properties.notToBeChecked)
-                {
-                    <div>
-                        <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
-                        <InputFile OnChange="e => UploadImage(playdevice.properties.fid, e)" accept="image/png"
-                            style="padding: 1em;" />
-                    </div>
-                }
-            </div>
-        }
+        <div>
+            <img title="Foto des Spielger&auml;ts"
+                style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+                src="Playdevice/@playdevice.properties.fid/Picture?t=@(imageCacheBuster.TryGetValue(playdevice.properties.fid, out var val) ? val : "")">
+            @if (!playdevice.properties.notToBeChecked)
+            {
+                <div>
+                    <span style="font-size: 50%;margin-left:1em;">Foto ersetzen...</span>
+                    <InputFile OnChange="e => UploadImage(playdevice.properties.fid, e)" accept="image/png"
+                        style="padding: 1em;" />
+                </div>
+            }
+        </div>
         <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
     </div>
 }

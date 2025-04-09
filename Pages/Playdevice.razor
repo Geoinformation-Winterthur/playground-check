@@ -13,14 +13,11 @@
     <b>Inspektionsart:</b> @AppStateProvider.selectedInspectionType
 </p>
 
-@if (playdevice.properties.pictureBase64String != null)
-{
-    <div>
-        <img title="Foto des Spielger&auml;ts"
-            style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-            src="Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
-    </div>
-}
+<div>
+    <img title="Foto des Spielger&auml;ts"
+        style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+        src="Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
+</div>
 
 @if (!playdevice.properties.hasChecks)
 {
@@ -98,8 +95,7 @@ else
                     <div style="padding: 0.5em;color: rgb(39, 39, 223);">
                         &#10132;&nbsp;<b>Wartung</b>: @inspectionCriterion.maintenance
                     </div>
-                    <input type="checkbox" @bind="inspectionCriterion.currentInspectionReport.maintenanceDone"
-                        style="margin:10px;" />
+                    <input type="checkbox" @bind="inspectionCriterion.currentInspectionReport.maintenanceDone" style="margin:10px;" />
                     <label>Wartung erledigt</label>
                     <form-field>
                         <label>Kommentar zur Wartung</label>
@@ -124,7 +120,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         playdevice = AppStateProvider.playground.playdevices
-            .FirstOrDefault(p => p.properties.fid == fid);
+        .FirstOrDefault(p => p.properties.fid == fid);
         if (playdevice == null)
             playdevice = new PlaydeviceFeature();
 
