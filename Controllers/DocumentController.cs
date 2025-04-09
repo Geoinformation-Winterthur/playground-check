@@ -28,7 +28,6 @@ public class DocumentController : ControllerBase
     // GET Document/3736373?type=abnahme
     [Route("/Document/{documentfid}")]
     [HttpGet]
-    [Authorize]
     public IActionResult GetDocument(int documentFid, string type)
     {
         try
