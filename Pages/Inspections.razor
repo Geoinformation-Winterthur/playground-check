@@ -41,6 +41,20 @@
     }
 </select>
 
+@if (AppStateProvider.playground.inspectionSuspended)
+{
+    <p style="background-color: rgb(232, 243, 255);border: 2px solid;color:rgb(86, 86, 212);margin-top: 2em;padding: 1em;">
+        Beim ausgewählten Spielplatz ist die Inspektion
+        @if(AppStateProvider.playground.suspendInspectionFrom != null){
+            <span>vom @AppStateProvider.playground.suspendInspectionFrom?.ToString("dd.MM.yyyy")</span>
+        }
+        @if(AppStateProvider.playground.suspendInspectionTo != null){
+            <span> bis zum @AppStateProvider.playground.suspendInspectionTo?.ToString("dd.MM.yyyy")</span>
+        }
+        ausgesetzt.
+    </p>
+}
+
 @foreach (var playdevice in AppStateProvider.playground.playdevices)
 {
     <div style="margin: 2em;padding: 1em;border: 1px solid grey">
@@ -126,8 +140,8 @@
         if (AppStateProvider.selectedPlaygroundName != "")
         {
             AppStateProvider.playground = PlaygroundService
-                .GetByName(AppStateProvider.selectedPlaygroundName,
-                AppStateProvider.selectedInspectionType, false);
+            .GetByName(AppStateProvider.selectedPlaygroundName,
+            AppStateProvider.selectedInspectionType, false);
             foreach (var playdevice in AppStateProvider.playground.playdevices)
             {
                 playdevice.evaluateChecks();
