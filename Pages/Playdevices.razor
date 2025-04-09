@@ -102,7 +102,7 @@ playground.certificateDocumentsFids.Length != 0)
         if (playground.name != "")
         {
             playground = PlaygroundService
-            .GetByName(playground.name, "Keine Inspektion");
+            .GetByName(playground.name, "Keine Inspektion", true);
         }
         else
         {

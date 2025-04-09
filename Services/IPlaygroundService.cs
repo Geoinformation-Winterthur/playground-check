@@ -8,7 +8,6 @@ public interface IPlaygroundService
     Task<PlaygroundFeature[]> GetFeaturesInCollection();
     IEnumerable<Playground> GetOnlyNames(string inspectionType, ClaimsPrincipal user);
     Task<PlaygroundFeature> GetPlaygroundAsFeature(string uuid);
-    Playground GetById(int id, string inspectionType);
-    Playground GetByName(string name, string inspectionType);
+    Playground GetByName(string name, string inspectionType, bool minimal);
     Task PutPlaydevicePictureAsync(int playdeviceFid, string pictureBase64String, bool dryRun);
 }

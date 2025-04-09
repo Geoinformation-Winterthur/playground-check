@@ -132,16 +132,9 @@ namespace playground_check.Services
             }
         }
 
-
-        public Playground GetById(int id, string inspectionType)
+        public Playground GetByName(string name, string inspectionType, bool minimal)
         {
-            return this.readPlaygroundFromDb(id, null, inspectionType);
-        }
-
-
-        public Playground GetByName(string name, string inspectionType)
-        {
-            return this.readPlaygroundFromDb(-1, name, inspectionType);
+            return this.readPlaygroundFromDb(-1, name, inspectionType, minimal);
         }
 
 
@@ -298,7 +291,8 @@ namespace playground_check.Services
 
         }
 
-        private Playground readPlaygroundFromDb(int id, string name, string inspectionType)
+        private Playground readPlaygroundFromDb(int id, string name,
+                    string inspectionType, bool minimal)
         {
             Playground currentPlayground = null;
 
@@ -357,11 +351,15 @@ namespace playground_check.Services
 
                 if (currentPlayground.playdevices != null)
                 {
-                    readInspectionCriteriaOfPlaydevices(currentPlayground.playdevices, inspectionType);
+                    if (!minimal)
+                    {
+                        readInspectionCriteriaOfPlaydevices(currentPlayground.playdevices, inspectionType);
 
-                    string[] inspectionTypes = InspectionTypesController._GetTypes();
+                        string[] inspectionTypes = InspectionTypesController._GetTypes();
 
-                    readReportsOfPlaydevices(currentPlayground.playdevices, inspectionTypes);
+                        readReportsOfPlaydevices(currentPlayground.playdevices, inspectionTypes);
+                    }
+                    readDefectsOfPlaydevices(currentPlayground.playdevices);
                 }
 
             }
@@ -518,7 +516,15 @@ namespace playground_check.Services
                 }
                 playdevice.properties.lastInspectionReports = lastInspectionReports.ToArray();
                 playdevice.properties.nextToLastInspectionReports = nextToLastInspectionReports.ToArray();
+            }
+        }
 
+        private void readDefectsOfPlaydevices(PlaydeviceFeature[] playdevices)
+        {
+            using NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString);
+            pgConn.Open();
+            foreach (PlaydeviceFeature playdevice in playdevices)
+            {
                 DefectDAO defectDao = new();
                 playdevice.properties.defects = defectDao.ReadAllOfPlaydevice(playdevice.properties.fid);
             }
