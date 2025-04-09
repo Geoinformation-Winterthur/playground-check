@@ -3,6 +3,9 @@
 //      Copyright (c) Geoinformation Winterthur. All rights reserved.
 // </copyright>
 using System.Security.Claims;
+using System.Text;
+using Npgsql;
+using playground_check.Configuration;
 using playground_check.Controllers;
 using playground_check.Model;
 
@@ -80,6 +83,32 @@ namespace playground_check.Services
                 result.errorMessage = "SPK-4";
             }
             return result;
+        }
+
+        public async Task PutDefectPictureAsync(DefectPicture defectPic, int defectTid, bool dryRun)
+        {
+            if (dryRun) return;
+
+            await using var pgConn = new NpgsqlConnection(AppConfig.connectionString);
+            await pgConn.OpenAsync();
+
+            await using var insertDefectPicCommand = pgConn.CreateCommand();
+            insertDefectPicCommand.CommandText = "INSERT INTO \"wgr_sp_insp_mangel_foto\" " +
+                    "(tid, tid_maengel, picture_base64, picture_base64_thumb, zeitpunkt)" +
+                    "VALUES (" +
+                    "(SELECT CASE WHEN max(tid) IS NULL THEN 1 ELSE max(tid) + 1 END FROM \"wgr_sp_insp_mangel_foto\"), " +
+                    "@tid_maengel, @picture_base64, @picture_base64_thumb, @zeitpunkt)";
+
+            insertDefectPicCommand.Parameters.AddWithValue("tid_maengel", defectTid);
+            insertDefectPicCommand.Parameters.AddWithValue("picture_base64", defectPic.base64StringPicture);
+            insertDefectPicCommand.Parameters.AddWithValue("picture_base64_thumb", defectPic.base64StringPictureThumb);
+            insertDefectPicCommand.Parameters.AddWithValue("zeitpunkt", defectPic.afterFixing);
+            int rowsAffected = await insertDefectPicCommand.ExecuteNonQueryAsync();
+
+            if (rowsAffected == 0)
+            {
+                throw new InvalidOperationException($"Kein Mangel mit tid {defectTid} gefunden oder Bild konnte nicht gespeichert werden.");
+            }
         }
 
     }

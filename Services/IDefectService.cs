@@ -12,4 +12,6 @@ public interface IDefectService
 
     ErrorMessage Update(Defect defect,
                 ClaimsPrincipal user, bool dryRun = false);
+    
+    Task PutDefectPictureAsync(DefectPicture defectPic, int defectTid, bool dryRun);
 }

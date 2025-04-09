@@ -94,28 +94,5 @@ namespace playground_check.Controllers
             }
         }
 
-
-        // PUT Playdevice/3736373/Picture
-        [Route("/Playdevice/{playdevicefid}/Picture")]
-        [HttpPut]
-        [Authorize]
-        public IActionResult PutPicture(int playdeviceFid, [FromBody] Image pictureBase64, bool dryRun = false)
-        {
-            if (dryRun) return Ok();
-
-            using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
-            {
-                pgConn.Open();
-                NpgsqlCommand updatePictureCommand = pgConn.CreateCommand();
-                updatePictureCommand.CommandText = "UPDATE \"gr_v_spielgeraete\" " +
-                        "SET picture_base64=@picture_base64 " +
-                        "WHERE fid=@fid";
-                updatePictureCommand.Parameters.AddWithValue("fid", playdeviceFid);
-                updatePictureCommand.Parameters.AddWithValue("picture_base64", pictureBase64.Data);
-                updatePictureCommand.ExecuteNonQuery();
-            }
-            return Ok();
-        }
-
     }
 }

@@ -20,18 +20,16 @@ namespace playground_check.Model
             using (NpgsqlConnection pgConn = new(AppConfig.connectionString))
             {
                 pgConn.Open();
-                NpgsqlCommand selectDefectsComm = this._CreateCommandForSelect(
-                            tid, pgConn);
+                NpgsqlCommand selectDefectsComm = this._CreateCommandForSelect(tid, pgConn);
 
                 using (NpgsqlDataReader reader = selectDefectsComm.ExecuteReader())
                 {
-                    if (reader.Read())
-                        result = _ReadDefect(reader);
+                    if (reader.Read()) result = _ReadDefect(reader);
                 }
-
-                if(result != null)
-                    result.pictures = ReadAllPictures(result.tid, pgConn);
-
+                if(result != null) {
+                    result.defectPicsTids = _ReadAllPictureTids(result.tid, false, pgConn);
+                    result.defectPicsAfterFixingTids = _ReadAllPictureTids(result.tid, true, pgConn);
+                }
             }
             return result;
         }
@@ -57,10 +55,6 @@ namespace playground_check.Model
                         }
                     }
                 }
-
-                foreach (Defect defect in result)
-                    defect.pictures = ReadAllPictures(defect.tid, pgConn);
-
             }
             return result.ToArray();
         }
@@ -77,13 +71,6 @@ namespace playground_check.Model
                                 pgConn, userFromDb);
                 int defectNewTid = -1;
                 if (!dryRun) defectNewTid = (int)insertDefectCommand.ExecuteScalar();
-
-                foreach (DefectPicture defectPic in defect.pictures)
-                {
-                    DbCommand insertDefectPicCommand = CreateCommandForInsertPicture(defectPic,
-                            defectNewTid, pgConn);
-                    if (!dryRun) insertDefectPicCommand.ExecuteNonQuery();
-                }
             }
         }
 
@@ -99,17 +86,6 @@ namespace playground_check.Model
                     if (updateDefectCommand != null)
                     {
                         updateDefectCommand.ExecuteNonQuery();
-
-                        foreach (DefectPicture defectPic in defect.pictures)
-                        {
-                            if (defectPic.afterFixing)
-                            {
-                                DbCommand insertDefectPicCommand = CreateCommandForInsertPicture(defectPic,
-                                        defect.tid, pgConn);
-                                if (!dryRun) insertDefectPicCommand.ExecuteNonQuery();
-                            }
-                        }
-
                     }
                 }
             }
@@ -171,29 +147,21 @@ namespace playground_check.Model
             return defect;
         }
 
-        private static DefectPicture[] ReadAllPictures(int defectTid,
-                    NpgsqlConnection pgConn)
+        private static int[] _ReadAllPictureTids(int defectTid, bool isFixed, NpgsqlConnection pgConn)
         {
-            List<DefectPicture> result = new();
+            List<int> result = new();
 
             NpgsqlCommand selectDefectsCommand = pgConn.CreateCommand();
-            selectDefectsCommand.CommandText = @$"SELECT picture_base64, picture_base64_thumb,
-                                  zeitpunkt
+            selectDefectsCommand.CommandText = @$"SELECT tid
                                 FROM ""wgr_sp_insp_mangel_foto""
-                                WHERE tid_maengel={defectTid}";
+                                WHERE tid_maengel={defectTid} AND zeitpunkt={isFixed}";
 
             using (NpgsqlDataReader reader = selectDefectsCommand.ExecuteReader())
             {
-                DefectPicture defectPicture;
                 while (reader.Read())
                 {
-                    defectPicture = new()
-                    {
-                        base64StringPicture = reader.IsDBNull(0) ? "" : reader.GetString(0),
-                        base64StringPictureThumb = reader.IsDBNull(1) ? "" : reader.GetString(1),
-                        afterFixing = reader.IsDBNull(2) ? false : reader.GetBoolean(2)
-                    };
-                    result.Add(defectPicture);
+                    int tid = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
+                    result.Add(tid);
                 }
             }
             return result.ToArray();
