@@ -35,6 +35,13 @@ namespace playground_check.Controllers
         [Authorize]
         public ActionResult<ErrorMessage> Post([FromBody] Defect[] defects, bool dryRun = false)
         {
+            User userFromDb = LoginController.getAuthorizedUser(this.User, dryRun);
+            if (userFromDb == null || userFromDb.fid == 0)
+            {
+                return Unauthorized("Sie sind entweder nicht als Kontrolleur in der " +
+                    "Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung.");
+            }
+
             return Ok(_service.Update(defects, this.User, dryRun));
         }
 
@@ -46,17 +53,12 @@ namespace playground_check.Controllers
                     && userFromDb.fid != 0)
             {
                 DefectDAO defectDao = new();
-                Dictionary<string, int> defectPriorityNames = defectDao.GetDefectPriorityIds();
-
                 foreach (Defect defect in defects)
                 {
                     if (defect != null && defect.defectDescription != null &&
                             defect.defectDescription.Trim().Length != 0)
                     {
-                        defectPriorityNames.TryGetValue(defect.priority, out int idPriority);
-
-                        DefectDAO.Insert(defect, idPriority, inspectionTid,
-                                userFromDb, dryRun);
+                        defectDao.Insert(defect, userFromDb, inspectionTid, dryRun);
                     }
                 }
             }

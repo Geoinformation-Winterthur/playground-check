@@ -13,63 +13,6 @@ namespace playground_check.Model
     public class DefectDAO
     {
 
-        internal List<string> GetDefectPriorityOptions()
-        {
-            List<string> result = new List<string>();
-
-            using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
-            {
-                pgConn.Open();
-                NpgsqlCommand selectDefectPriorityIds = this._CreateCommandForSelectDefectPriorityIds(pgConn);
-                using (NpgsqlDataReader reader = selectDefectPriorityIds.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        if (!reader.IsDBNull(0))
-                        {
-                            string shortValue = reader.IsDBNull(1) ? "" : reader.GetString(1);
-                            string longValue = reader.IsDBNull(2) ? "" : reader.GetString(2);
-                            string finalName = DefectDAO._ConcatPriorityOfDefect(shortValue, longValue);
-                            if (finalName.Length != 0)
-                            {
-                                result.Add(finalName);
-                            }
-                        }
-                    }
-                }
-            }
-            return result;
-        }
-
-        internal Dictionary<string, int> GetDefectPriorityIds()
-        {
-            Dictionary<string, int> result = new Dictionary<string, int>();
-
-            using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
-            {
-                pgConn.Open();
-                NpgsqlCommand selectDefectPriorityIds = this._CreateCommandForSelectDefectPriorityIds(pgConn);
-                using (NpgsqlDataReader reader = selectDefectPriorityIds.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-
-                        int id = reader.IsDBNull(0) ? -1 : reader.GetInt32(0);
-                        string shortValue = reader.IsDBNull(1) ? "" : reader.GetString(1);
-                        string longValue = reader.IsDBNull(2) ? "" : reader.GetString(2);
-
-                        if (id >= 0 && shortValue.Length != 0 && longValue.Length != 0)
-                        {
-                            string finalName = DefectDAO._ConcatPriorityOfDefect(shortValue, longValue);
-                            result.Add(finalName, id);
-                        }
-
-                    }
-                }
-            }
-            return result;
-        }
-
         internal Defect Read(int tid)
         {
             Defect result = null;
@@ -122,15 +65,15 @@ namespace playground_check.Model
             return result.ToArray();
         }
 
-        internal static void Insert(Defect defect, int idPriority, int inspectionTid,
-                    User userFromDb, bool dryRun)
+        internal void Insert(Defect defect, User userFromDb,
+                    int? inspectionTid, bool dryRun = false)
         {
-            if (idPriority != -1)
+            if (!string.IsNullOrWhiteSpace(defect.defectDescription))
             {
                 using NpgsqlConnection pgConn = new(AppConfig.connectionString);
                 pgConn.Open();
 
-                DbCommand insertDefectCommand = CreateCommandForInsert(defect, idPriority,
+                DbCommand insertDefectCommand = CreateCommandForInsert(defect,
                                 inspectionTid, pgConn, userFromDb);
                 int defectNewTid = -1;
                 if (!dryRun) defectNewTid = (int)insertDefectCommand.ExecuteScalar();
@@ -146,7 +89,7 @@ namespace playground_check.Model
 
         internal void Update(Defect defect, User userFromDb, bool dryRun)
         {
-            if (defect != null && defect.dateDone != null)
+            if (defect != null)
             {
                 using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
                 {
@@ -172,36 +115,26 @@ namespace playground_check.Model
             }
         }
 
-        private NpgsqlCommand _CreateCommandForSelectDefectPriorityIds(NpgsqlConnection pgConn)
-        {
-            NpgsqlCommand selectDefectPriorityIds = pgConn.CreateCommand();
-            selectDefectPriorityIds.CommandText =
-                        "SELECT id, short_value, value FROM \"wgr_sp_dringlichkeit_tbd\"";
-            return selectDefectPriorityIds;
-        }
-
         private NpgsqlCommand _CreateCommandForSelect(int tid, NpgsqlConnection pgConn)
         {
             NpgsqlCommand selectDefectCommand = pgConn.CreateCommand();
-            selectDefectCommand.CommandText = "SELECT m.tid, d.short_value, d.value, m.beschrieb, " +
-                    "m.datum_erledigung, m.fid_erledigung, m.bemerkunng, m.datum, " +
-                    "m.id_zustaendig_behebung " +
-                    "FROM \"wgr_sp_insp_mangel\" m " +
-                    "LEFT JOIN \"wgr_sp_dringlichkeit_tbd\" d ON m.id_dringlichkeit = d.id " +
-                    "WHERE m.tid=" + tid;
+            selectDefectCommand.CommandText = "SELECT tid, id_dringlichkeit, beschrieb, " +
+                    "datum_erledigung, fid_erledigung, bemerkunng, datum, " +
+                    "id_zustaendig_behebung " +
+                    "FROM \"wgr_sp_insp_mangel\" " +
+                    "WHERE tid=" + tid;
             return selectDefectCommand;
         }
 
         private NpgsqlCommand _CreateCommandForSelectByPlaydevice(int playdeviceFid, NpgsqlConnection pgConn)
         {
             NpgsqlCommand selectDefectsCommand = pgConn.CreateCommand();
-            selectDefectsCommand.CommandText = "SELECT m.tid, d.short_value, d.value, m.beschrieb, " +
-                    "m.datum_erledigung, m.fid_erledigung, m.bemerkunng, m.datum, " +
-                    "m.id_zustaendig_behebung " +
-                    "FROM \"wgr_sp_insp_mangel\" m " +
-                    "LEFT JOIN \"wgr_sp_dringlichkeit_tbd\" d ON m.id_dringlichkeit = d.id " +
-                    "WHERE m.fid_spielgeraet=" + playdeviceFid +
-                    " AND m.datum_erledigung IS NULL";
+            selectDefectsCommand.CommandText = "SELECT tid, id_dringlichkeit, beschrieb, " +
+                    "datum_erledigung, fid_erledigung, bemerkunng, datum, " +
+                    "id_zustaendig_behebung " +
+                    "FROM \"wgr_sp_insp_mangel\" " +
+                    "WHERE fid_spielgeraet=" + playdeviceFid +
+                    " AND datum_erledigung IS NULL";
             return selectDefectsCommand;
         }
 
@@ -211,24 +144,29 @@ namespace playground_check.Model
             {
                 tid = reader.IsDBNull(0) ? -1 : reader.GetInt32(0)
             };
-            string shortValue = reader.IsDBNull(1) ? "Unbekannt" : reader.GetString(1);
-            string longValue = reader.IsDBNull(2) ? "Unbekannt" : reader.GetString(2);
-            defect.priority = DefectDAO._ConcatPriorityOfDefect(shortValue, longValue);
-            defect.defectDescription = reader.IsDBNull(3) ? "Keine Beschreibung" : reader.GetString(3);
-            if (!reader.IsDBNull(4))
+            int priorityOrdinal = reader.GetOrdinal("id_dringlichkeit");
+            defect.priority = reader.IsDBNull(priorityOrdinal) ? -1 : reader.GetInt32(priorityOrdinal);
+            int defectDescriptionOrdinal = reader.GetOrdinal("beschrieb");
+            defect.defectDescription = reader.IsDBNull(defectDescriptionOrdinal) ? "" :
+                        reader.GetString(defectDescriptionOrdinal);
+            int dateDoneOrdinal = reader.GetOrdinal("datum_erledigung");
+            if (!reader.IsDBNull(dateDoneOrdinal))
             {
-                NpgsqlDate dateDone = reader.GetDate(4);
+                NpgsqlDate dateDone = reader.GetDate(dateDoneOrdinal);
                 defect.dateDone = (DateTime)dateDone;
             }
-            defect.defectComment = reader.IsDBNull(6) ? "Kein Kommentar" : reader.GetString(6);
-            if (!reader.IsDBNull(7))
+            int defectCommentOrdinal = reader.GetOrdinal("bemerkunng");
+            defect.defectComment = reader.IsDBNull(defectCommentOrdinal) ? "" : reader.GetString(defectCommentOrdinal);
+            int dateCreationOrdinal = reader.GetOrdinal("datum");
+            if (!reader.IsDBNull(dateCreationOrdinal))
             {
-                NpgsqlDate dateCreation = reader.GetDate(7);
+                NpgsqlDate dateCreation = reader.GetDate(dateCreationOrdinal);
                 defect.dateCreation = (DateTime)dateCreation;
             }
-            if (!reader.IsDBNull(8))
+            int defectsResponsibleBodyIdOrdinal = reader.GetOrdinal("id_zustaendig_behebung");            
+            if (!reader.IsDBNull(defectsResponsibleBodyIdOrdinal))
             {
-                defect.defectsResponsibleBodyId = reader.GetInt32(8);
+                defect.defectsResponsibleBodyId = reader.GetInt32(defectsResponsibleBodyIdOrdinal);
             }
             return defect;
         }
@@ -261,8 +199,8 @@ namespace playground_check.Model
             return result.ToArray();
         }
 
-        private static DbCommand CreateCommandForInsert(Defect defect, int idPriority,
-                    int inspectionTid, NpgsqlConnection pgConn, User userFromDb)
+        private static DbCommand CreateCommandForInsert(Defect defect, int? inspectionTid,
+                        NpgsqlConnection pgConn, User userFromDb)
         {
             NpgsqlCommand insertDefectCommand = pgConn.CreateCommand();
             insertDefectCommand.CommandText = "INSERT INTO \"wgr_sp_insp_mangel\" " +
@@ -275,7 +213,7 @@ namespace playground_check.Model
 
             insertDefectCommand.Parameters.AddWithValue("tid_inspektion", inspectionTid);
             insertDefectCommand.Parameters.AddWithValue("fid_spielgeraet", defect.playdeviceFid);
-            insertDefectCommand.Parameters.AddWithValue("dringlichkeit", idPriority);
+            insertDefectCommand.Parameters.AddWithValue("dringlichkeit", defect.priority);
             insertDefectCommand.Parameters.AddWithValue("beschrieb", defect.defectDescription ?? "");
             insertDefectCommand.Parameters.AddWithValue("bemerkung", defect.defectComment ?? "");
             insertDefectCommand.Parameters.AddWithValue("id_zustaendig_behebung",
@@ -319,43 +257,22 @@ namespace playground_check.Model
         {
             if (dryRun) return null;
             NpgsqlCommand updateDefectCommand = pgConn.CreateCommand();
-            updateDefectCommand.CommandText = "UPDATE \"wgr_sp_insp_mangel\" " +
-                    "SET datum_erledigung=@datum_erledigung, bemerkunng=@bemerkung, " +
-                    "fid_erledigung=@fid_erledigung " +
-                    "WHERE tid=@tid";
+            updateDefectCommand.CommandText = @"UPDATE ""wgr_sp_insp_mangel""
+                    SET id_dringlichkeit = @id_dringlichkeit, beschrieb = @beschrieb,
+                    bemerkunng = @bemerkung, datum_erledigung = @datum_erledigung,
+                    id_zustaendig_behebung = @id_zustaendig_behebung, fid_erledigung = @fid_erledigung
+                    WHERE tid = @tid";
             updateDefectCommand.Parameters.AddWithValue("tid", defect.tid);
-            NpgsqlDate dateDone = (NpgsqlDate)defect.dateDone;
-            updateDefectCommand.Parameters.AddWithValue("datum_erledigung", dateDone);
+            updateDefectCommand.Parameters.AddWithValue("id_dringlichkeit", defect.priority);
+            updateDefectCommand.Parameters.AddWithValue("beschrieb", defect.defectDescription);
             updateDefectCommand.Parameters.AddWithValue("bemerkung", defect.defectComment);
-            updateDefectCommand.Parameters.AddWithValue("fid_erledigung", userFromDb.fid);
+            NpgsqlDate? dateDone = null;
+            if(defect.dateDone != null) dateDone = (NpgsqlDate)defect.dateDone;
+            updateDefectCommand.Parameters.AddWithValue("datum_erledigung", dateDone != null ? dateDone : DBNull.Value);
+            updateDefectCommand.Parameters.AddWithValue("id_zustaendig_behebung", defect.defectsResponsibleBodyId);
+            updateDefectCommand.Parameters.AddWithValue("fid_erledigung", dateDone != null ? userFromDb.fid : DBNull.Value);
             return updateDefectCommand;
         }
-
-        private static string _ConcatPriorityOfDefect(string shortValue, string longValue)
-        {
-            string result = "";
-            if (shortValue != null)
-            {
-                shortValue = shortValue.Trim();
-                result += shortValue;
-            }
-
-            if (longValue != null)
-            {
-                longValue = longValue.Trim();
-                if (result.Length != 0)
-                {
-                    result += " (" + longValue + ")";
-                }
-                else
-                {
-                    result += longValue;
-                }
-            }
-            return result;
-        }
-
-
 
     }
 }

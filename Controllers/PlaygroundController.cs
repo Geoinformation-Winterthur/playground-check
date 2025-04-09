@@ -175,11 +175,6 @@ namespace playground_check.Controllers
 
             if (currentPlayground != null)
             {
-
-                DefectDAO defectDao = new DefectDAO();
-                List<string> defectPriorityOptions = defectDao.GetDefectPriorityOptions();
-                currentPlayground.defectPriorityOptions = defectPriorityOptions.ToArray();
-
                 currentPlayground.inspectionTypeOptions = InspectionTypesController._GetTypes();
 
                 currentPlayground.renovationTypeOptions = _GetRenovationTypes();

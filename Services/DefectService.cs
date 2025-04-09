@@ -35,14 +35,8 @@ namespace playground_check.Services
         {
             ErrorMessage result = new ErrorMessage();
             User userFromDb = LoginController.getAuthorizedUser(user, dryRun);
-            if (userFromDb == null || userFromDb.fid == 0)
-            {
-                result.errorMessage = "Sie sind entweder nicht als Kontrolleur in der " +
-                    "Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung.";
-                return result;
-            }
 
-            if (defects != null)
+            if (defects != null && userFromDb != null)
             {
                 try
                 {

@@ -3,6 +3,7 @@
 @using playground_check.Services
 @attribute [Authorize]
 @inject IDefectService DefectService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Spielplatzkontrolle - Mangel</PageTitle>
 
@@ -24,9 +25,9 @@
 <form-field appearance="fill" style="margin:0.5em;">
     <label>Dringlichkeit</label>
     <select name="urgancy" @bind="defect.priority" class="form-select">
-        <option value="A (sofort)">A (sofort)</option>
-        <option value="B (mittelfristig)">B (mittelfristig)</option>
-        <option value="C (Ohne Gefahr, muss im Folgejahr beurteilt werden)">C (Ohne Gefahr, muss im Folgejahr beurteilt werden)</option>
+        <option value="1">A (sofort)</option>
+        <option value="2">B (mittelfristig)</option>
+        <option value="3">C (Ohne Gefahr, muss im Folgejahr beurteilt werden)</option>
     </select>
 </form-field>
 <form-field appearance="fill" style="margin:0.5em;">
@@ -106,6 +107,8 @@
 }
 </p>
 
+<button class="btn btn-primary" @onclick="UpdateDefect">Speichern</button>
+
 @code {
     [Parameter]
     public int tid { get; set; }
@@ -148,6 +151,13 @@
             }
         }
         return picturesTemp.ToArray();
+    }
+
+    private async Task UpdateDefect()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        DefectService.Update(new[] { defect }, user);
     }
 
     private void UploadImage()

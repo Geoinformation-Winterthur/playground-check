@@ -29,7 +29,6 @@ public class Playground
     public PlaydeviceFeature[] playdevices { get; set; }
             = new PlaydeviceFeature[0];
 
-    public string[] defectPriorityOptions { get; set; } = Array.Empty<string>();
     public string[] inspectionTypeOptions { get; set; } = Array.Empty<string>();
     public Enumeration[] renovationTypeOptions { get; set; } = Array.Empty<Enumeration>();
     public Enumeration[] defectsResponsibleBodyOptions { get; set; } = Array.Empty<Enumeration>();
