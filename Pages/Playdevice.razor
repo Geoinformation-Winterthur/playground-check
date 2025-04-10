@@ -23,29 +23,11 @@
 {
     <div>
         <p style="color: green; margin-bottom: 2em;background-color: rgb(249, 255, 245);border: solid;padding: 1em;">
-            Es sind keine Pr&uuml;fungen zu diesem Ger&auml;t vorhanden oder aktiv.</p>
+            Es sind keine Prüfungen zu diesem Gerät vorhanden oder aktiv.</p>
     </div>
 }
 else
 {
-    <p style="margin: 2em;">
-        <input type="checkbox" @bind="playdevice.properties.cannotBeChecked" />
-        <label>Nicht prüfbar</label>
-    </p>
-    @if (playdevice.properties.cannotBeChecked)
-    {
-        <div>
-            <form-field style="width: 100%;">
-                <label>Begründung, weshalb das Gerät nicht prüfbar ist</label><br>
-                <textarea matInput maxlength="255" @bind="playdevice.properties.cannotBeCheckedReason"
-                    placeholder="Begründung, weshalb das Gerät nicht prüfbar ist..." required></textarea>
-            </form-field>
-        </div>
-        <div *ngIf="playdevice.properties.cannotBeChecked && !playdevice.properties.cannotBeCheckedReason"
-            style="padding: 1em;border: 2px solid;color: rgb(156, 2, 2);background-color: rgb(255, 223, 226);">
-            Die Angabe einer Begründung ist obligatorisch, um den Bericht senden zu können.
-        </div>
-    }
     @if (!playdevice.properties.cannotBeChecked)
     {
         <p>
@@ -84,9 +66,9 @@ else
                             @inspectionCriterion.check</div>
                         <input type="checkbox" @bind="inspectionCriterion.currentInspectionReport.inspectionDone"
                             style="margin:10px;" />
-                        <label>Prüfung erledigt</label>
+                        <label>Prüfung erledigt</label><br>
                         <form-field>
-                            <label>Kommentar zur Prüfung</label>
+                            <label>Kommentar zur Prüfung</label><br>
                             <textarea matInput maxlength="255" @bind="inspectionCriterion.currentInspectionReport.inspectionComment"
                                 placeholder="Bei Bedarf bitte Prüfkommentar..."></textarea>
                         </form-field>
@@ -96,9 +78,9 @@ else
                         &#10132;&nbsp;<b>Wartung</b>: @inspectionCriterion.maintenance
                     </div>
                     <input type="checkbox" @bind="inspectionCriterion.currentInspectionReport.maintenanceDone" style="margin:10px;" />
-                    <label>Wartung erledigt</label>
+                    <label>Wartung erledigt</label><br>
                     <form-field>
-                        <label>Kommentar zur Wartung</label>
+                        <label>Kommentar zur Wartung</label><br>
                         <textarea matInput maxlength="255" @bind="inspectionCriterion.currentInspectionReport.maintenanceComment"
                             placeholder="Bei Bedarf bitte Wartungskommentar..."></textarea>
                     </form-field>

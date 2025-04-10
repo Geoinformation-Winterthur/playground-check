@@ -31,14 +31,14 @@
                 <br />
                 <input value="@user.mailAddress" class="form-control" placeholder="E-Mail-Adresse" disabled />
                 <br />
-                <label for="role">Rolle</label>
+                <label for="role">Rolle</label><br>
                 <InputSelect @bind-Value="user.role" id="role" class="form-select">
                     <option value="administrator">Administrator</option>
                     <option value="inspector">Kontrolleur</option>
                 </InputSelect>
                 <br />
                 <InputCheckbox @bind-Value="user.active" />
-                <label>Aktiv</label>
+                <label>Aktiv</label><br>
             </div>
         </div>
 

@@ -25,7 +25,7 @@ else
         style="width: 100%;"></textarea>
 </div>
 <form-field appearance="fill" style="margin:0.5em;">
-    <label>Dringlichkeit</label>
+    <label>Dringlichkeit</label><br>
     <select name="urgancy" @bind="defect.priority" class="form-select">
         <option value="1">A (sofort)</option>
         <option value="2">B (mittelfristig)</option>
@@ -33,7 +33,7 @@ else
     </select>
 </form-field>
 <form-field appearance="fill" style="margin:0.5em;">
-    <label>Zuständigkeit</label>
+    <label>Zuständigkeit</label><br>
     <select name="responsible" @bind="defect.defectsResponsibleBodyId" class="form-select">
         <option value="1">Revier</option>
         <option value="2">Spielplatzverantwortlicher</option>
@@ -90,7 +90,7 @@ else
         }
     </span></p>
 <form-field style="width: 100%;margin: 0.5em;">
-    <label>Bemerkung zur Erledigung</label>
+    <label>Bemerkung zur Erledigung</label><br>
     <textarea matInput maxlength="255" @bind="defect.defectComment"
         placeholder="Bemerkung zur Erledigung..."></textarea>
 </form-field>

@@ -10,7 +10,7 @@
 
 <h1>Spielgeräteübersicht</h1>
 
-<label for="playground">Spielplatz</label>
+<label for="playground">Spielplatz</label><br>
 <select name="playground" @bind="playground.name" @bind:after="OnPlaygroundChanged" class="form-select">
     <option value="">Bitte auswählen</option>
     @foreach (var playground in playgrounds)
@@ -81,9 +81,69 @@ playground.certificateDocumentsFids.Length != 0)
                 </div>
             }
         </div>
+        <p><b>Norm (Jahrgang)</b>: @playdevice.properties.type.standard</p>
         <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
+        <p><b>Erstellungsjahr</b>: @playdevice.properties.constructionDate.ToString("dd.MM.yyyy")</p>
+        <div style="margin: 2em;">
+            <p>
+                <form-field style="width: 15em;">
+                    <label>Empfohlenes Sanierungsjahr</label><br>
+                    <input @bind="playdevice.properties.recommendedYearOfRenovation"
+                        min="@DateTime.Now.Year" max="9999" type="number"
+                        @onblur="@(() => CheckYear(playdevice))"                        
+                        placeholder="Empfohlenes Sanierungsjahr...">
+                </form-field>
+            </p>
+            <form>
+                <form-field appearance="fill">
+                    <label>Sanierungsart</label><br>
+                    <select @bind="playdevice.properties.renovationType" required>
+                        <option value="0"></option>
+                        <option value="1">Totalsanierung</option>
+                        <option value="2">Teilsanierung</option>
+                    </select>
+                </form-field>
+            </form>
+            <p>
+                <form-field style="width: 20em;">
+                    <label>Kommentar zum empf. Sanierungsjahr</label><br>
+                    <textarea matInput maxlength="255" @bind="playdevice.properties.commentRecommendedYearOfRenovation"
+                        placeholder="Kommentar zum empf. Sanierungsjahr..." style="width: 100%;" />
+                </form-field>
+            </p>
+                <p style="margin: 2em;">
+        <input type="checkbox" @bind="playdevice.properties.cannotBeChecked" />
+        <label>Nicht prüfbar</label><br>
+    </p>
+    @if (playdevice.properties.cannotBeChecked)
+    {
         <div>
-            <NavLink class="btn btn-primary" href="@($"/inspectionprotocol/{playdevice.properties.fid}")">Inspektionsprotokolle</NavLink>
+            <form-field style="width: 100%;">
+                <label>Begründung, weshalb das Gerät nicht prüfbar ist</label><br><br>
+                <textarea matInput maxlength="255" @bind="playdevice.properties.cannotBeCheckedReason"
+                    placeholder="Begründung, weshalb das Gerät nicht prüfbar ist..." style="width: 100%;" required />
+            </form-field>
+        </div>
+        <div *ngIf="playdevice.properties.cannotBeChecked && !playdevice.properties.cannotBeCheckedReason"
+            style="padding: 1em;border: 2px solid;color: rgb(156, 2, 2);background-color: rgb(255, 223, 226);">
+            Die Angabe einer Begründung ist obligatorisch, um den Bericht senden zu können.
+        </div>
+    }
+        </div>
+        <div>
+            <button class="btn btn-primary" @onclick="() => UpdateRenovation(playdevice)"
+                disabled="@((playdevice.properties.recommendedYearOfRenovation != null
+                                && playdevice.properties.recommendedYearOfRenovation < DateTime.Today.Year)
+                                || (playdevice.properties.recommendedYearOfRenovation != null
+                                && playdevice.properties.recommendedYearOfRenovation >= DateTime.Today.Year
+                                && playdevice.properties.renovationType == 0) ||
+                                (playdevice.properties.cannotBeChecked && 
+                                string.IsNullOrWhiteSpace(playdevice.properties.cannotBeCheckedReason)))"
+                style="margin: 2em;">
+                Speichern
+            </button>
+            <NavLink href="@($"/inspectionprotocol/{playdevice.properties.fid}")">
+                Inspektionsprotokolle</NavLink>
         </div>
     </div>
 }
@@ -113,6 +173,13 @@ playground.certificateDocumentsFids.Length != 0)
         }
     }
 
+    private void CheckYear(PlaydeviceFeature playdevice)
+    {
+        if (playdevice.properties.recommendedYearOfRenovation.HasValue &&
+            playdevice.properties.recommendedYearOfRenovation.Value < DateTime.Today.Year)
+                playdevice.properties.renovationType = 0;
+    }
+
     private async Task UploadImage(int playdeviceFid, InputFileChangeEventArgs e)
     {
         var file = e.File;
@@ -130,6 +197,12 @@ playground.certificateDocumentsFids.Length != 0)
             imageCacheBuster[playdeviceFid] = DateTime.UtcNow.Ticks.ToString();
             StateHasChanged(); // Bild neu rendern
         }
+    }
+
+    private async Task UpdateRenovation(PlaydeviceFeature playdevice)
+    {
+        PlaydeviceFeatureDAO playdeviceFeatureDAO = new PlaydeviceFeatureDAO();
+        playdeviceFeatureDAO.Update(playdevice, false);
     }
 
 }

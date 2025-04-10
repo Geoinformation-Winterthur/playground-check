@@ -403,7 +403,8 @@ namespace playground_check.Services
                         "gart.short_value, gart.value, spg.norm, lief.name, " +
                         "spg.empfohlenes_sanierungsjahr, spg.bemerkung_empf_sanierung, " +
                         "spg.nicht_zu_pruefen, spg.bau_dat, " +
-                        "spg.id_sanierungsart " +
+                        "spg.id_sanierungsart, spg.nicht_pruefbar, " +
+                        "grund_nicht_pruefbar " +
                         "FROM \"gr_v_spielgeraete\" spg " +
                         "LEFT JOIN \"wgr_sp_spielgeraeteart_tbd\" gart ON spg.id_geraeteart = gart.id " +
                         "LEFT JOIN \"wgr_sp_lieferant\" lief ON spg.id_lieferant = lief.fid " +
@@ -446,13 +447,13 @@ namespace playground_check.Services
                         }
 
                         if (!reader.IsDBNull(11))
-                        {
-                            int idRenovationType = reader.GetInt32(11);
-                            if (idRenovationType == 1)
-                                currentPlaydevice.properties.renovationType = "Totalsanierung";
-                            else if (idRenovationType == 2)
-                                currentPlaydevice.properties.renovationType = "Teilsanierung";
-                        }
+                            currentPlaydevice.properties.renovationType = reader.GetInt32(11);
+
+                        if (!reader.IsDBNull(12))
+                            currentPlaydevice.properties.cannotBeChecked = reader.GetBoolean(12);
+
+                        if (!reader.IsDBNull(13))
+                            currentPlaydevice.properties.cannotBeCheckedReason = reader.GetString(13);
 
                         currentPlaydevices.Add(currentPlaydevice);
                     }

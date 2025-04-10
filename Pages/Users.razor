@@ -16,12 +16,12 @@
 
     <EditForm Model="this">
         <InputCheckbox @bind-Value="showInactiveUsers" @onchange="UpdateUsersList" />
-        <label style="margin: 0.5em;">Inaktive Benutzer einblenden</label><br />
+        <label style="margin: 0.5em;">Inaktive Benutzer einblenden</label><br><br />
 
         @if (showInactiveUsers)
         {
             <InputCheckbox @bind-Value="onlyShowNewUsers" @onchange="UpdateUsersList" />
-            <label style="margin: 0.5em;">Nur neue Benutzer anzeigen</label>
+            <label style="margin: 0.5em;">Nur neue Benutzer anzeigen</label><br>
         }
     </EditForm>
 

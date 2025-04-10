@@ -13,7 +13,7 @@
 
 <h1>Inspektion</h1>
 
-<label for="inspectiontype">Inspektionsart</label>
+<label for="inspectiontype">Inspektionsart</label><br>
 <select name="inspectiontype" @bind="AppStateProvider.selectedInspectionType" @bind:after="OnInspectionTypeChanged"
     class="form-select">
     <option value="">Bitte auswählen</option>
@@ -22,7 +22,7 @@
     <option value="Hauptinspektion (HI)">Hauptinspektion (HI)</option>
 </select>
 
-<label for="playground">Spielplatz</label>
+<label for="playground">Spielplatz</label><br>
 <select name="playground" @bind="AppStateProvider.selectedPlaygroundName" @bind:after="OnPlaygroundChanged"
     class="form-select">
     <option value="">Bitte auswählen</option>
@@ -45,10 +45,12 @@
 {
     <p style="background-color: rgb(232, 243, 255);border: 2px solid;color:rgb(86, 86, 212);margin-top: 2em;padding: 1em;">
         Beim ausgewählten Spielplatz ist die Inspektion
-        @if(AppStateProvider.playground.suspendInspectionFrom != null){
+        @if (AppStateProvider.playground.suspendInspectionFrom != null)
+        {
             <span>vom @AppStateProvider.playground.suspendInspectionFrom?.ToString("dd.MM.yyyy")</span>
         }
-        @if(AppStateProvider.playground.suspendInspectionTo != null){
+        @if (AppStateProvider.playground.suspendInspectionTo != null)
+        {
             <span> bis zum @AppStateProvider.playground.suspendInspectionTo?.ToString("dd.MM.yyyy")</span>
         }
         ausgesetzt.
@@ -96,9 +98,14 @@
             </a>
         </div>
         <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
-        <div>
-            <NavLink class="btn btn-primary" href="@($"/playdevice/{playdevice.properties.fid}")">Öffnen</NavLink>
-        </div>
+        @if (!playdevice.properties.cannotBeChecked)
+        {
+            <div>
+                <NavLink class="btn btn-primary" href="@($"/playdevice/{playdevice.properties.fid}")">
+                    Öffnen
+                </NavLink>
+            </div>
+        }
     </div>
 }
 

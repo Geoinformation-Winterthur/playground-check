@@ -55,21 +55,6 @@ namespace playground_check.Model
             }
         }
 
-        internal void UpdatePicture(int playdeviceFid, string picture, bool dryRun)
-        {
-            byte[] pictureBytes = Encoding.ASCII.GetBytes(picture);
-            using (NpgsqlConnection pgConn = new NpgsqlConnection(AppConfig.connectionString))
-            {
-                pgConn.Open();
-                DbCommand insertPlaydeviceCommand = this.CreateCommandForPictureUpdate(playdeviceFid, pictureBytes,
-                        pgConn, dryRun);
-                if (insertPlaydeviceCommand != null)
-                {
-                    insertPlaydeviceCommand.ExecuteNonQuery();
-                }
-            }
-        }
-
         private DbCommand CreateCommandForUpdate(PlaydeviceFeature playdevice,
                 NpgsqlConnection pgConn, bool dryRun)
         {
@@ -87,14 +72,7 @@ namespace playground_check.Model
             updatePlaydeviceCommand.Parameters.AddWithValue("empfohlenes_sanierungsjahr",
                     playdevice.properties.recommendedYearOfRenovation > 0 ?
                                 playdevice.properties.recommendedYearOfRenovation : DBNull.Value);
-
-            if (playdevice.properties.renovationType == "Totalsanierung") {
-                updatePlaydeviceCommand.Parameters.AddWithValue("id_sanierungsart", 1);
-            } else if (playdevice.properties.renovationType == "Teilsanierung") {
-                updatePlaydeviceCommand.Parameters.AddWithValue("id_sanierungsart", 2);
-            } else {
-                updatePlaydeviceCommand.Parameters.AddWithValue("id_sanierungsart", DBNull.Value);
-            }
+            updatePlaydeviceCommand.Parameters.AddWithValue("id_sanierungsart", playdevice.properties.renovationType);
 
             if (playdevice.properties.commentRecommendedYearOfRenovation != null &&
                         playdevice.properties.commentRecommendedYearOfRenovation.Length != 0)
@@ -109,19 +87,6 @@ namespace playground_check.Model
             }
             updatePlaydeviceCommand.Parameters.AddWithValue("nicht_pruefbar", playdevice.properties.cannotBeChecked);
             updatePlaydeviceCommand.Parameters.AddWithValue("grund_nicht_pruefbar", playdevice.properties.cannotBeCheckedReason);
-            return updatePlaydeviceCommand;
-        }
-
-        private DbCommand CreateCommandForPictureUpdate(int playdeviceFid, byte[] pictureBytes,
-                NpgsqlConnection pgConn, bool dryRun)
-        {
-            if (dryRun) return null;
-            NpgsqlCommand updatePlaydeviceCommand = pgConn.CreateCommand();
-            updatePlaydeviceCommand.CommandText = "UPDATE \"gr_v_spielgeraete\" SET " +
-                    "picture_base64=@picture " +
-                    "WHERE fid=@fid";
-            updatePlaydeviceCommand.Parameters.AddWithValue("picture", pictureBytes);
-            updatePlaydeviceCommand.Parameters.AddWithValue("fid", playdeviceFid);
             return updatePlaydeviceCommand;
         }
 
