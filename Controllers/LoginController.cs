@@ -5,9 +5,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using playground_check.Model;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using System.IdentityModel.Tokens.Jwt;
 using Npgsql;
 using playground_check.Configuration;
 using playground_check.Helper;
@@ -112,32 +109,6 @@ public class LoginController : ControllerBase
             if (userFromDb.mailAddress != null && userFromDb.passPhrase != null
                 && userFromDb.passPhrase.Equals(hashedPassphrase) && userFromDb.active)
             {
-                string securityKey = AppConfig.Configuration.GetValue<string>("SecurityKey");
-                byte[] securityKeyByteArray = Encoding.UTF8.GetBytes(securityKey);
-                SymmetricSecurityKey key = new SymmetricSecurityKey(securityKeyByteArray);
-                SigningCredentials signingCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-                List<Claim> userClaims = new()
-                {
-                    new Claim(ClaimTypes.Email, userFromDb.mailAddress),
-                    new Claim(ClaimTypes.GivenName, userFromDb.firstName),
-                    new Claim(ClaimTypes.Name, userFromDb.lastName),
-                    new Claim(ClaimTypes.Role, userFromDb.role)
-                };
-
-                string serviceDomain = AppConfig.Configuration.GetValue<string>("URL:ServiceDomain");
-                string serviceBasePath = AppConfig.Configuration.GetValue<string>("URL:ServiceBasePath");
-
-                JwtSecurityToken securityToken = new(
-                    issuer: serviceDomain + serviceBasePath,
-                    audience: serviceDomain + serviceBasePath,
-                    claims: userClaims,
-                    signingCredentials: signingCredentials,
-                    expires: DateTime.UtcNow.AddDays(2)  // the login expires after 2 days
-                );
-
-                string securityTokenString = new JwtSecurityTokenHandler().WriteToken(securityToken);
-
                 _logger.LogInformation("User " + receivedUser.mailAddress + " has logged in.");
                 userFromDb.passPhrase = "";
                 return Task.FromResult(LoginResult.SuccessResult(userFromDb));

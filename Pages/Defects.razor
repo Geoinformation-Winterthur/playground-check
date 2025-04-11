@@ -50,7 +50,7 @@
             {
                 <div>
                     @defect.defectDescription&nbsp;
-                    <NavLink class="btn btn-primary" href="@($"/defect/{playdevice.properties.fid}/{defect.tid}")">Öffnen</NavLink>
+                    <NavLink class="btn btn-primary" href="@($"defect/{playdevice.properties.fid}/{defect.tid}")">Öffnen</NavLink>
                 </div>
             }
         }
@@ -58,7 +58,7 @@
         {
             <p>Keine Mängel</p>
         }
-        <NavLink class="btn btn-primary" href="@($"/defect/{playdevice.properties.fid}/0")">Neuer Mangel</NavLink>
+        <NavLink class="btn btn-primary" href="@($"defect/{playdevice.properties.fid}/0")">Neuer Mangel</NavLink>
     </div>
 }
 
@@ -82,11 +82,17 @@
         {
             playground = PlaygroundService.GetByName(playgroundName, "Keine Inspektion", true);
                     playdeviceImages.Clear();
-        foreach (var device in playground.playdevices)
-        {
-            string base64 = await PlaydeviceService.GetPictureAsync(device.properties.fid);
-            playdeviceImages[device.properties.fid] = base64;
-        }
+
+            var tasks = playground.playdevices.Select(async device =>
+            {
+                var base64 = await PlaydeviceService.GetPictureAsync(device.properties.fid);
+                return (device.properties.fid, base64);
+            });
+
+            var results = await Task.WhenAll(tasks);
+
+            playdeviceImages = results.ToDictionary(r => r.fid, r => r.base64);
+
         }
         else
         {

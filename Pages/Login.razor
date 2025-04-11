@@ -11,6 +11,8 @@
     <button type="submit">Login</button>
 </EditForm>
 
+<p>Test: @Nav.BaseUri</p>
+
 @if (!string.IsNullOrEmpty(Error))
 {
     <p style="color:red">@Error</p>
@@ -33,10 +35,12 @@
             AuthProvider.MarkUserAsAuthenticated(result.User, result.User.role);
             Error = null;
 
-            if (!string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith("/stadtgruen/playground-check/"))
+            var basePath = Nav.BaseUri.TrimEnd('/');
+
+            if (!string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith(basePath))
                 Nav.NavigateTo(returnUrl, forceLoad: false);
             else
-                Nav.NavigateTo("/stadtgruen/playground-check/", forceLoad: false);
+                Nav.NavigateTo(basePath + "/", forceLoad: false);
 
         }
         else

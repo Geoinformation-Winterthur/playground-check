@@ -73,6 +73,6 @@
     private void Logout()
     {
         AuthProvider.MarkUserAsLoggedOut();
-        Nav.NavigateTo("/");
+        Nav.NavigateTo(Nav.BaseUri);
     }
 }

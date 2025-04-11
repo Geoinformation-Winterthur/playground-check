@@ -1,10 +1,9 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
 using playground_check.Configuration;
 using Serilog;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using Prometheus;
 using Npgsql;
 using Microsoft.OpenApi.Models;
@@ -30,7 +29,6 @@ try
 
     string serviceDomain = AppConfig.Configuration.GetValue<string>("URL:ServiceDomain");
     string serviceBasePath = AppConfig.Configuration.GetValue<string>("URL:ServiceBasePath");
-    string securityKey = AppConfig.Configuration.GetValue<string>("SecurityKey");
 
     // Add services to the container.
     builder.Services.AddRazorPages();
@@ -70,7 +68,16 @@ try
         options.IncludeXmlComments(commentsXmlFile);
     });
 
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownProxies.Add(IPAddress.Parse("172.21.15.83"));
+    options.KnownProxies.Add(IPAddress.Parse("172.21.15.84"));
+    });
+
     var app = builder.Build();
+
+    app.UseForwardedHeaders();
 
     // Configure the HTTP request pipeline.
     if (!app.Environment.IsDevelopment())
