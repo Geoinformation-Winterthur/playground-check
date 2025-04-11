@@ -17,6 +17,10 @@
 }
 
 @code {
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public string? returnUrl { get; set; }
+
     private User loginObj = new();
     private string? Error;
 
@@ -28,7 +32,12 @@
         {
             AuthProvider.MarkUserAsAuthenticated(result.User, result.User.role);
             Error = null;
-            Nav.NavigateTo("/");
+
+            if (!string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith("/stadtgruen/playground-check/"))
+                Nav.NavigateTo(returnUrl, forceLoad: false);
+            else
+                Nav.NavigateTo("/stadtgruen/playground-check/", forceLoad: false);
+
         }
         else
         {

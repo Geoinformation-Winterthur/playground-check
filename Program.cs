@@ -99,6 +99,8 @@ try
 
     app.UseHttpsRedirection();
 
+    app.UsePathBase("/stadtgruen/playground-check");
+
     app.UseStaticFiles();
 
     app.UseRouting();
