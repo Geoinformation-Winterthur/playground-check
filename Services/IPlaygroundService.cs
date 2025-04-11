@@ -9,5 +9,4 @@ public interface IPlaygroundService
     IEnumerable<Playground> GetOnlyNames(string inspectionType, ClaimsPrincipal user);
     Task<PlaygroundFeature> GetPlaygroundAsFeature(string uuid);
     Playground GetByName(string name, string inspectionType, bool minimal);
-    Task PutPlaydevicePictureAsync(int playdeviceFid, string pictureBase64String, bool dryRun);
 }

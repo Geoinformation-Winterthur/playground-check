@@ -366,30 +366,6 @@ namespace playground_check.Services
 
             return currentPlayground;
         }
-        public async Task PutPlaydevicePictureAsync(int playdeviceFid, string pictureBase64String, bool dryRun)
-        {
-            if (dryRun) return;
-
-            await using var pgConn = new NpgsqlConnection(AppConfig.connectionString);
-            Task openPgConnTask = pgConn.OpenAsync();
-
-            // Base64-String in Byte-Array umwandeln
-            byte[] pictureBytes = Encoding.UTF8.GetBytes(pictureBase64String);
-
-            await openPgConnTask;
-            await using var updatePictureCommand = pgConn.CreateCommand();
-            updatePictureCommand.CommandText = "UPDATE \"gr_v_spielgeraete\" " +
-                                               "SET picture_base64 = @picture_base64 " +
-                                               "WHERE fid = @fid";
-            updatePictureCommand.Parameters.AddWithValue("fid", playdeviceFid);
-            updatePictureCommand.Parameters.AddWithValue("picture_base64", pictureBytes);
-            int rowsAffected = await updatePictureCommand.ExecuteNonQueryAsync();
-
-            if (rowsAffected == 0)
-            {
-                throw new InvalidOperationException($"Kein Spielgerät mit fid {playdeviceFid} gefunden oder Bild konnte nicht gespeichert werden.");
-            }
-        }
 
         private PlaydeviceFeature[] _ReadPlaydevicesOfPlayground(int playGroundId)
         {

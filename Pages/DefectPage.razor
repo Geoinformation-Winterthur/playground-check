@@ -48,10 +48,14 @@ else
     }
     @foreach (int defectPicTid in defect.defectPicsTids)
     {
-        <a href="Defect/Picture/@defectPicTid?thumb=false" target="_blank">
-            <img title="Foto des Mangels" src="Defect/Picture/@defectPicTid?thumb=true"
-                width="30%" style="margin: 2px;border: 1px solid rgb(160, 188, 230);">
-        </a>
+        @if (defectThumbs.TryGetValue(defectPicTid, out var thumbSrc) &&
+             defectFullImages.TryGetValue(defectPicTid, out var fullSrc))
+        {
+            <a href="@fullSrc" target="_blank">
+                <img title="Foto des Mangels" src="@thumbSrc"
+                     width="30%" style="margin: 2px;border: 1px solid rgb(160, 188, 230);" />
+            </a>
+        }
     }
 </div>
 <hr>
@@ -67,11 +71,15 @@ else
         @if (defect.tid != 0 && defect.defectPicsAfterFixingTids.Length < 3)
         {
             <InputFile OnChange="e => UploadImage(true, e)" accept="image/png" style="padding: 1em;" />
-            @foreach (int defectPicTid in defect.defectPicsAfterFixingTids)
+        }
+        @foreach (int defectPicTid in defect.defectPicsAfterFixingTids)
+        {
+            @if (defectThumbs.TryGetValue(defectPicTid, out var thumbSrc) &&
+                 defectFullImages.TryGetValue(defectPicTid, out var fullSrc))
             {
-                <a href="Defect/Picture/@defectPicTid?thumb=false" target="_blank">
-                    <img title="Foto des Mangels" src="Defect/Picture/@defectPicTid?thumb=true"
-                        width="30%" style="margin: 2px;border: 1px solid rgb(160, 188, 230);">
+                <a href="@fullSrc" target="_blank">
+                    <img title="Foto des Mangels" src="@thumbSrc"
+                         width="30%" style="margin: 2px;border: 1px solid rgb(160, 188, 230);" />
                 </a>
             }
         }
@@ -80,9 +88,7 @@ else
 <p><span><i>Datum der Erledigung: </i>
         @if (defect.dateDone != null)
         {
-            <span>
-                @defect.dateDone?.ToString("dd.MM.yyyy")
-            </span>
+            <span>@defect.dateDone?.ToString("dd.MM.yyyy")</span>
         }
         else
         {
@@ -122,25 +128,38 @@ else
 }
 
 @code {
-    [Parameter]
-    public int tid { get; set; }
-
-    [Parameter]
-    public int playdeviceFid { get; set; }
+    [Parameter] public int tid { get; set; }
+    [Parameter] public int playdeviceFid { get; set; }
 
     private Defect defect = new();
+    private Dictionary<int, string> defectThumbs = new();
+    private Dictionary<int, string> defectFullImages = new();
 
     protected override async Task OnInitializedAsync()
     {
         if (tid > 0)
         {
             defect = DefectService.Get(tid);
+
+            foreach (var picTid in defect.defectPicsTids)
+            {
+                defectThumbs[picTid] = await DefectService.GetPictureAsync(picTid, thumb: true);
+                defectFullImages[picTid] = await DefectService.GetPictureAsync(picTid, thumb: false);
+            }
+
+            foreach (var picTid in defect.defectPicsAfterFixingTids)
+            {
+                defectThumbs[picTid] = await DefectService.GetPictureAsync(picTid, thumb: true);
+                defectFullImages[picTid] = await DefectService.GetPictureAsync(picTid, thumb: false);
+            }
         }
         else
         {
-            defect = new Defect();
-            defect.playdeviceFid = playdeviceFid;
-            defect.dateCreation = DateTime.Now;
+            defect = new Defect
+            {
+                playdeviceFid = playdeviceFid,
+                dateCreation = DateTime.Now
+            };
         }
     }
 
@@ -159,7 +178,6 @@ else
         DefectService.Create(defect, user);
     }
 
-
     private async Task UpdateDefect()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -174,7 +192,7 @@ else
         {
             DefectPicture defectPicture = new DefectPicture();
             defectPicture.afterFixing = afterFixing;
-            using var stream = file.OpenReadStream(50 * 1024 * 1024); // 50MB max picture size
+            using var stream = file.OpenReadStream(50 * 1024 * 1024);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
             string base64String = Convert.ToBase64String(ms.ToArray());
@@ -182,10 +200,11 @@ else
             defectPicture.base64StringPictureThumb = ImageHelper.DownsizeImage(base64String, 400, 400);
             defectPicture.base64StringPictureThumb = ImageHelper.CropImage(defectPicture.base64StringPictureThumb, 1, 1);
 
-            await DefectService.PutDefectPictureAsync(defectPicture, defect.tid, false);
+            await DefectService.PutPictureAsync(defectPicture, defect.tid, false);
 
-            StateHasChanged(); // Bild neu rendern
+            // Nach dem Upload neu laden (vereinfachte Annahme: letzte TID ist neueste)
+            // Alternativ: defect.defectPicsTids / defect.defectPicsAfterFixingTids neu laden
+            StateHasChanged();
         }
     }
-
 }

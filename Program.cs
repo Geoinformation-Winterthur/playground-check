@@ -48,6 +48,8 @@ try
     // Register services:
     builder.Services.AddScoped<AppStateProvider>();
     builder.Services.AddScoped<IPlaygroundService, PlaygroundService>();
+    builder.Services.AddScoped<IPlaydeviceService, PlaydeviceService>();
+    builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IInspectionService, InspectionService>();
     builder.Services.AddScoped<IDefectService, DefectService>();
     builder.Services.AddScoped<IUserService, UserService>();

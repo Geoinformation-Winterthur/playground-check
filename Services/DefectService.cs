@@ -29,7 +29,7 @@ namespace playground_check.Services
 
         public Defect Get(int tid)
         {
-            DefectDAO defectDAO = new DefectDAO(); 
+            DefectDAO defectDAO = new DefectDAO();
             return defectDAO.Read(tid);
         }
 
@@ -85,7 +85,55 @@ namespace playground_check.Services
             return result;
         }
 
-        public async Task PutDefectPictureAsync(DefectPicture defectPic, int defectTid, bool dryRun)
+        public async Task<string> GetPictureAsync(int tid, bool thumb, bool dryrun = false)
+        {
+            if (dryrun) return "";
+
+            await using var pgConn = new NpgsqlConnection(AppConfig.connectionString);
+            await pgConn.OpenAsync();
+
+            await using var cmd = pgConn.CreateCommand();
+            string pictureAttribute = thumb ? "picture_base64_thumb" : "picture_base64";
+
+            cmd.CommandText = @$"
+                SELECT {pictureAttribute}
+                FROM ""wgr_sp_insp_mangel_foto""
+                WHERE tid = @tid";
+            cmd.Parameters.AddWithValue("tid", tid);
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                if (!reader.IsDBNull(0))
+                {
+                    string base64String = reader.GetString(0);
+
+                    // Prüfe auf data:image/...-Prefix
+                    if (base64String.StartsWith("data:"))
+                    {
+                        return base64String; // direkt zurückgeben
+                    }
+
+                    try
+                    {
+                        // Falls kein Prefix vorhanden → dekodieren und neu zusammensetzen
+                        byte[] pictureBytes = Convert.FromBase64String(base64String);
+                        string rebuilt = $"data:image/png;base64,{Encoding.UTF8.GetString(pictureBytes)}";
+                        return rebuilt;
+                    }
+                    catch (FormatException ex)
+                    {
+                        _logger.LogError($"Bild bei TID {tid} konnte nicht dekodiert werden: {ex.Message}");
+                        return "";
+                    }
+                }
+            }
+
+            return "";
+        }
+
+
+        public async Task PutPictureAsync(DefectPicture defectPic, int defectTid, bool dryRun)
         {
             if (dryRun) return;
 

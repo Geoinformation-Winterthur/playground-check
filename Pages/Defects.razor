@@ -3,6 +3,7 @@
 @using playground_check.Model
 @using playground_check.Services
 @inject IPlaygroundService PlaygroundService
+@inject IPlaydeviceService PlaydeviceService
 @inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Spielplatzkontrolle - Mängel</PageTitle>
@@ -35,11 +36,12 @@
         {
             <p><b>Kann geprüft werden</b></p>
         }
-        <div>
-            <img title="Foto des Spielger&auml;ts"
-                style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-                src="Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
-        </div>
+@if (playdeviceImages.TryGetValue(playdevice.properties.fid, out var base64Image) && !string.IsNullOrEmpty(base64Image))
+{
+    <img title="Foto des Spielgeräts"
+         style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
+         src="@base64Image" />
+}
         <p><b>Lieferant</b>: @playdevice.properties.supplier</p>
         @if (playdevice.properties.defects.Length != 0)
         {
@@ -63,6 +65,7 @@
 @code {
     private IEnumerable<Playground> playgrounds = new Playground[0];
     private Playground playground = new Playground();
+    private Dictionary<int, string> playdeviceImages = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -78,6 +81,12 @@
         if (playgroundName != "")
         {
             playground = PlaygroundService.GetByName(playgroundName, "Keine Inspektion", true);
+                    playdeviceImages.Clear();
+        foreach (var device in playground.playdevices)
+        {
+            string base64 = await PlaydeviceService.GetPictureAsync(device.properties.fid);
+            playdeviceImages[device.properties.fid] = base64;
+        }
         }
         else
         {

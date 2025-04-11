@@ -3,6 +3,7 @@
 @using playground_check.Model
 @using playground_check.Services
 @inject IPlaygroundService PlaygroundService
+@inject IPlaydeviceService PlaydeviceService
 @inject AppStateProvider AppStateProvider
 
 <PageTitle>Spielplatzkontrolle - Spielgerät</PageTitle>
@@ -13,11 +14,13 @@
     <b>Inspektionsart:</b> @AppStateProvider.selectedInspectionType
 </p>
 
-<div>
-    <img title="Foto des Spielger&auml;ts"
-        style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;"
-        src="Playdevice/@playdevice.properties.fid/Picture?dryRun=false">
-</div>
+@if (!string.IsNullOrEmpty(base64Image))
+{
+    <div>
+        <img title="Foto des Spielgeräts"
+            style="display: block;width: 50%;margin-left: auto;margin-right: auto;margin-top: 0.5em;" src="@base64Image" />
+    </div>
+}
 
 @if (!playdevice.properties.hasChecks)
 {
@@ -92,20 +95,20 @@ else
 }
 
 
-
 @code {
     [Parameter]
     public int fid { get; set; }
-    private PlaydeviceFeature playdevice;
 
+    private PlaydeviceFeature playdevice;
+    private string? base64Image;
 
     protected override async Task OnInitializedAsync()
     {
         playdevice = AppStateProvider.playground.playdevices
-        .FirstOrDefault(p => p.properties.fid == fid);
-        if (playdevice == null)
-            playdevice = new PlaydeviceFeature();
+        .FirstOrDefault(p => p.properties.fid == fid) ?? new PlaydeviceFeature();
 
         playdevice.properties.dateOfService = DateTime.Today;
+
+        base64Image = await PlaydeviceService.GetPictureAsync(fid);
     }
 }
