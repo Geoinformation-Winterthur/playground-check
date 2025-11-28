@@ -1,9 +1,12 @@
+__pycache__/
+.venv/
 .vscode/
-bin/
-obj/
-logs/
-appsettings.json
-appsettings.Development.json
-appsettings.Production.json
-appsettings.Staging.json
-resolv.conf
+*.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Environment
+.env

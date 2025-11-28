@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2A7F67">
+    <meta name="description" content="Spielplatzkontrolle Winterthur">
+    <title>Spielplatzkontrolle</title>
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='roboto.css') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='assets/win_logo.svg') }}">
+</head>
+
+<body>
+    <div id="mainbox">
+        <header class="mat-toolbar">
+            <div class="mat-toolbar-row">
+                <button class="mat-icon-button burger_button" id="sidebarToggle" aria-label="Toggle menu">
+                    <span class="mat-icon">menu</span>
+                </button>
+                &nbsp;&nbsp;&nbsp;
+                <div style="display: flex; align-items: center;">
+                    <span class="logo_title">Stadtgrün</span>
+                    <span class="logo_subtitle">Spielplatzkontrolle</span>
+                </div>
+                <span class="align-right-spacer"></span>
+                <img src="{{ url_for('static', filename='assets/win_logo.svg') }}" class="main_logo"
+                    alt="Logo Stadt Winterthur">&nbsp;&nbsp;&nbsp;&nbsp;
+
+                {% if current_user.is_authenticated %}
+                <div class="mat-chip-list" aria-label="User menu">
+                    <div class="mat-chip chip-initials" title="{{ current_user.vorname }} {{ current_user.nachname }}">
+                        {{ current_user.vorname[0] }}{{ current_user.nachname[0] }}
+                    </div>
+                </div>
+                <a href="{{ url_for('main.logout') }}" class="mat-button" style="margin-left: 10px;">
+                    <span class="mat-icon">logout</span> <span class="hide-mobile">Logout</span>
+                </a>
+                {% else %}
+                <a href="{{ url_for('main.login') }}" class="login_button">
+                    <span class="mat-icon" style="color: white; margin-right: 8px;">login</span> Login
+                </a>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="mat-sidenav-container">
+            <nav class="mat-sidenav" id="sidenav">
+                <div class="mat-nav-list">
+                    <a href="{{ url_for('main.index') }}" class="mat-list-item">
+                        <span class="mat-icon">dashboard</span> Willkommen
+                    </a>
+                    {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('main.choose_device') }}" class="mat-list-item">
+                        <span class="mat-icon">park</span> Spielgeräte
+                    </a>
+                    <a href="{{ url_for('main.inspections') }}" class="mat-list-item">
+                        <span class="mat-icon">assignment</span> Inspektion
+                    </a>
+                    <a href="{{ url_for('main.defects') }}" class="mat-list-item">
+                        <span class="mat-icon">build</span> Mängel
+                    </a>
+                    {% endif %}
+                    <div style="flex: 1;"></div>
+                    <a href="https://stadt.winterthur.ch/impressum" class="mat-list-item" target="_blank">
+                        <span class="mat-icon">info</span> Impressum
+                    </a>
+                </div>
+            </nav>
+
+            <main class="mat-sidenav-content" id="content">
+                {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                <div class="flashes" style="margin-bottom: 20px;">
+                    {% for message in messages %}
+                    <div
+                        style="padding: 12px; background: #e8f5e9; color: #2e7d32; border-radius: 4px; margin-bottom: 8px;">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidenav = document.getElementById('sidenav');
+        const content = document.getElementById('content');
+
+        sidebarToggle.addEventListener('click', () => {
+            sidenav.classList.toggle('open');
+        });
+
+        // Close sidebar when clicking outside on mobile
+        content.addEventListener('click', () => {
+            if (window.innerWidth <= 768 && sidenav.classList.contains('open')) {
+                sidenav.classList.remove('open');
+            }
+        });
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}")
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
+
+    <style>
+        /* Mobile specific styles for base template */
+        @media (max-width: 768px) {
+            .hide-mobile {
+                display: none;
+            }
+        }
+    </style>
+</body>
+
+</html>

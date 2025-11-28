@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="padding: 2em; max-width: 800px; margin: 0 auto;">
+    <div style="margin-bottom: 24px;">
+        <a href="{{ url_for('main.defects_list', device_fid=device.fid) }}" class="mat-button"
+            style="color: var(--text-secondary); padding-left: 0;">
+            <span class="mat-icon">arrow_back</span> Zurück zur Liste
+        </a>
+    </div>
+
+    <div class="mat-card">
+        <h1 style="color: var(--primary-color); margin-bottom: 24px;">
+            {{ 'Neuer Mangel' if defect.tid == 0 else 'Mangel bearbeiten' }}
+        </h1>
+
+        <form method="post" enctype="multipart/form-data">
+            <div class="mat-form-field">
+                <label
+                    style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px; display: block;">Beschreibung</label>
+                <textarea name="description" class="mat-input" rows="5" required
+                    style="resize: vertical;">{{ defect.beschrieb if defect.beschrieb else '' }}</textarea>
+            </div>
+
+            <div class="mat-form-field">
+                <label
+                    style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px; display: block;">Dringlichkeit</label>
+                <select name="priority" class="mat-input">
+                    <option value="1" {{ 'selected' if defect.id_dringlichkeit==1 else '' }}>Niedrig</option>
+                    <option value="2" {{ 'selected' if defect.id_dringlichkeit==2 else '' }}>Mittel</option>
+                    <option value="3" {{ 'selected' if defect.id_dringlichkeit==3 else '' }}>Hoch</option>
+                </select>
+            </div>
+
+            <!-- Image upload placeholder -->
+            <div style="margin-bottom: 24px;">
+                <label
+                    style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 8px; display: block;">Fotos</label>
+                <div class="upload-box" onclick="document.querySelector('input[type=file]').click()">
+                    <span class="mat-icon" style="font-size: 32px; margin-bottom: 8px;">add_a_photo</span><br>
+                    Fotos hier ablegen oder klicken zum Hochladen
+                    <input type="file" name="photos" multiple style="display: none;">
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 32px;">
+                <a href="{{ url_for('main.defects_list', device_fid=device.fid) }}" class="mat-button"
+                    style="color: var(--text-secondary);">
+                    ABBRECHEN
+                </a>
+                <button type="submit" class="mat-button"
+                    style="background-color: var(--primary-color); color: white; padding: 12px 32px;">
+                    SPEICHERN
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

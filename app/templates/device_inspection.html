@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="padding: 2em;">
+    <h1 style="font-weight: lighter;text-transform: uppercase;">Inspektion: {{ device.device_type.value }}</h1>
+    <h2 style="font-weight: lighter;">{{ device.device_type.short_value }}</h2>
+
+    <div style="margin-bottom: 2em;">
+        <a href="{{ url_for('main.inspections', inspection_type=inspection_type, playground_name=device.playground.name) }}"
+            class="mat-button" style="text-decoration: none; color: black;">
+            <span class="mat-icon">arrow_back</span> Zurück zur Übersicht
+        </a>
+    </div>
+
+    <form method="post">
+        <div class="mat-card">
+            <div class="mat-card-header">
+                <div class="mat-card-title">Allgemeine Prüfkriterien</div>
+            </div>
+            <div class="mat-card-content">
+                {% if criteria %}
+                {% for criterion in criteria %}
+                <div style="margin-bottom: 1em; padding-bottom: 1em; border-bottom: 1px solid #eee;">
+                    <div style="font-weight: bold;">{{ criterion.pruefung }}</div>
+                    <div style="color: #666; font-size: 0.9em;">{{ criterion.pruefung_kurztext }}</div>
+
+                    <div style="margin-top: 0.5em;">
+                        <label style="margin-right: 1em;">
+                            <input type="radio" name="check_{{ criterion.fid_inspektionskriterium }}" value="ok"> OK
+                        </label>
+                        <label>
+                            <input type="radio" name="check_{{ criterion.fid_inspektionskriterium }}" value="nok">
+                            Mangel
+                        </label>
+                    </div>
+
+                    <div class="mat-form-field" style="margin-top: 0.5em;">
+                        <input class="mat-input" type="text" name="comment_{{ criterion.fid_inspektionskriterium }}"
+                            placeholder="Kommentar">
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p>Keine Prüfkriterien gefunden.</p>
+                {% endif %}
+            </div>
+            <div class="mat-card-actions">
+                <button type="submit" class="mat-button"
+                    style="background-color: rgb(42,127,103); color: white; border: none; padding: 8px 16px; cursor: pointer;">
+                    SPEICHERN
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
