@@ -62,6 +62,8 @@
   function renderLogin(){content.innerHTML=`<div class="login-form"><form id="login-form"><h2>Anmeldung</h2><div id="login-error" class="error hidden">Benutzername oder Passphrase ungültig.</div>${field('Benutzername','loginname','','email','required autofocus')}${field('Passphrase','password','','password','required')}<button class="button toolbar-login" type="submit">LOGIN</button></form></div>`;document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const result=await api('/account/login',{method:'POST',body:JSON.stringify({mailAddress:f.get('loginname'),passPhrase:f.get('password')})});localStorage.setItem(TOKEN_KEY,result.securityTokenString);state.user=readUser();await clearPlayground();updateShell();navigate('/');}catch{document.querySelector('#login-error').classList.remove('hidden');}};}
 
   async function playgroundPicker(mode){
+    const crossHairAssetImage=new Image();
+    crossHairAssetImage.src='/static/assets/crosshair.png';
     const title=mode==='overview'?'Basisdaten Spielgeräte':mode==='defect'?'Mängel':'Inspektion';
     content.innerHTML=page(title,`<div id="picker-controls"></div><div id="picker-result"></div>`);
     let types=[];if(mode==='inspection')types=await api('/inspection/types');
