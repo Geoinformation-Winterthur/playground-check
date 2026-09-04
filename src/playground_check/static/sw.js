@@ -1,10 +1,12 @@
 const CACHE='spielplatzkontrolle-2026.7.1';
+const BASE_PATH=new URL(self.registration.scope).pathname.replace(/\/$/,'');
+const scoped=path=>`${BASE_PATH}${path}`||'/';
 const APP_SHELL=[
-  '/',
-  '/static/assets/favicon.ico',
-  '/static/manifest.webmanifest',
-  '/static/css/app.css',
-  '/static/js/app.js'
+  scoped('/'),
+  scoped('/static/assets/favicon.ico'),
+  scoped('/static/manifest.webmanifest'),
+  scoped('/static/css/app.css'),
+  scoped('/static/js/app.js')
 ];
 
 self.addEventListener('install',event=>event.waitUntil(
@@ -27,7 +29,7 @@ self.addEventListener('fetch',event=>{
   }
 
   // The original "assets" group is lazy: cache an asset only after first use.
-  if(url.pathname.startsWith('/static/assets/')){
+  if(url.pathname.startsWith(scoped('/static/assets/'))){
     event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{
       if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}
       return response;
@@ -52,8 +54,9 @@ self.addEventListener('push',event=>{
 self.addEventListener('notificationclick',event=>{
   event.notification.close();
   const data=event.notification.data||{};
-  let url=data.url||'/defects';
-  if(data.defectTid&&data.playdeviceFid)url=`/defect/${data.playdeviceFid}/${data.defectTid}`;
+  let url=data.url||scoped('/defects');
+  if(data.url&&data.url.startsWith('/'))url=scoped(data.url);
+  if(data.defectTid&&data.playdeviceFid)url=scoped(`/defect/${data.playdeviceFid}/${data.defectTid}`);
   event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(async all=>{
     const target=new URL(url,self.location.origin).href;
     if(all.length){const client=all[0];if('navigate' in client)await client.navigate(target);return client.focus();}

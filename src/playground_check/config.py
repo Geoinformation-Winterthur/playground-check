@@ -28,6 +28,15 @@ def _bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+
+def _base_path(value: str | None) -> str:
+    """Normalize an ASP.NET-style PathBase for the combined WSGI app."""
+    value = (value or "").strip()
+    if not value or value == "/":
+        return ""
+    return "/" + value.strip("/")
+
+
 def _npgsql_to_libpq(value: str) -> str:
     """Accept the original Npgsql key/value connection-string format as well."""
     if not value or ";" not in value:
@@ -66,6 +75,7 @@ class Settings:
     playground_user_token_key: str
     hide_info_cookie_name: str
     wms_url: str
+    base_path: str
     token_issuer: str
     compatibility_bugs: bool
     service_worker_enabled: bool
@@ -91,6 +101,7 @@ class Settings:
             playground_user_token_key=os.getenv("PLAYGROUND_USER_TOKEN_KEY", "playground.user.token"),
             hide_info_cookie_name=os.getenv("PLAYGROUND_HIDE_INFO_COOKIE_NAME", "hide_info"),
             wms_url=os.getenv("PLAYGROUND_WMS_URL", os.getenv("WMS__ServiceUrl", "http://stadtplan.winterthur.ch/wms/Spielplatzkarte")),
+            base_path=_base_path(os.getenv("PLAYGROUND_BASE_PATH", os.getenv("URL__ServiceBasePath", ""))),
             token_issuer=os.getenv(
                 "PLAYGROUND_SERVICE_URL",
                 os.getenv("URL__ServiceDomain", "") + os.getenv("URL__ServiceBasePath", "/"),

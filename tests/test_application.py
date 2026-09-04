@@ -6,9 +6,11 @@ import os
 import tempfile
 import unittest
 from decimal import Decimal
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from playground_check import server as server_module
 from playground_check import service
 from playground_check.auth import decode_token, issue_token
 from playground_check.config import _npgsql_to_libpq, load_environment
@@ -60,6 +62,20 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(body["status"], "ok")
         status, manifest, _ = self.request("GET", "/static/manifest.webmanifest")
         self.assertEqual(manifest["short_name"], "SPK")
+
+    def test_configured_path_base_is_stripped_for_routing_and_exposed_to_frontend(self):
+        configured = replace(server_module.settings, base_path="/stadtgruen/spielplatzkontrolle")
+        with patch.object(server_module, "settings", configured):
+            status, body, _ = self.request("GET", "/stadtgruen/spielplatzkontrolle/")
+            self.assertEqual(status, 200)
+            self.assertIn(b'"basePath":"/stadtgruen/spielplatzkontrolle"', body)
+
+            status, result, _ = self.request("GET", "/stadtgruen/spielplatzkontrolle/api/health")
+            self.assertEqual(status, 200)
+            self.assertEqual(result["status"], "ok")
+
+            status, _, _ = self.request("GET", "/")
+            self.assertEqual(status, 404)
 
     def test_unknown_api_paths_do_not_fall_back_to_spa(self):
         status, body, _ = self.request("GET", "/playground/not-a-route")

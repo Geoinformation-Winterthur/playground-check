@@ -65,7 +65,14 @@ class Application:
         self.index = Path(__file__).with_name("templates") / "index.html"
 
     def __call__(self, environ, start_response):
-        request = Request(environ)
+        external_request = Request(environ)
+        request = self._path_base_request(external_request)
+        if request is None:
+            response = Response.text("Not found", 404)
+            headers = [("Content-Type", response.content_type), ("Content-Length", str(len(response.body))),
+                       ("Access-Control-Allow-Origin", "*"), ("X-Content-Type-Options", "nosniff")]
+            start_response(status_line(response.status), headers)
+            return [response.body]
         try:
             response = self.router.dispatch(request)
             if response is None:
@@ -86,6 +93,18 @@ class Application:
         start_response(status_line(response.status), headers)
         return [response.body]
 
+    def _path_base_request(self, request: Request) -> Request | None:
+        base_path = settings.base_path
+        if not base_path:
+            return request
+        path = request.path
+        if path != base_path and not path.startswith(base_path + "/"):
+            return None
+        environ = dict(request.environ)
+        environ["SCRIPT_NAME"] = (environ.get("SCRIPT_NAME", "") or "") + base_path
+        environ["PATH_INFO"] = path[len(base_path):] or "/"
+        return Request(environ)
+
     def _frontend(self, request: Request) -> Response:
         if request.path == "/api/health":
             return Response.json({"status":"ok","version":__version__})
@@ -95,7 +114,10 @@ class Application:
             if self.static_root.resolve() not in target.parents or not target.is_file():
                 return Response.text("Not found", 404)
             content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-            return Response.file(target.read_bytes(), content_type)
+            response = Response.file(target.read_bytes(), content_type)
+            if relative == "sw.js":
+                response.headers.append(("Service-Worker-Allowed", (settings.base_path or "") + "/"))
+            return response
         if self._is_api_path(request.path):
             return Response.text("Not found", 404)
         if request.method == "GET":
@@ -104,6 +126,7 @@ class Application:
                     "tokenKey": settings.playground_user_token_key,
                     "playgroundKey": settings.playground_token_key,
                     "hideInfoCookieName": settings.hide_info_cookie_name,
+                    "basePath": settings.base_path,
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -112,6 +135,7 @@ class Application:
                 self.index.read_text(encoding="utf-8")
                 .replace("{{APP_TITLE}}", settings.title)
                 .replace("{{APP_SHORT_TITLE}}", settings.short_title)
+                .replace("{{APP_BASE_PATH}}", settings.base_path)
                 .replace("{{APP_VERSION}}", __version__)
                 .replace("{{APP_CONFIG}}", app_config)
                 .replace("{{SERVICE_WORKER_ENABLED}}", "true" if settings.service_worker_enabled else "false")
