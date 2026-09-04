@@ -64,6 +64,7 @@ class Settings:
     wms_url: str
     token_issuer: str
     compatibility_bugs: bool
+    service_worker_enabled: bool
 
     @classmethod
     def load(cls) -> "Settings":
@@ -87,6 +88,7 @@ class Settings:
                 os.getenv("URL__ServiceDomain", "") + os.getenv("URL__ServiceBasePath", "/"),
             ),
             compatibility_bugs=_bool(os.getenv("PLAYGROUND_COMPATIBILITY_BUGS"), True),
+            service_worker_enabled=_bool(os.getenv("PLAYGROUND_SERVICE_WORKER_ENABLED"), True),
         )
 
 

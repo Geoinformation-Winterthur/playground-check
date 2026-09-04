@@ -87,7 +87,12 @@ class Application:
             content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             return Response.file(target.read_bytes(), content_type)
         if request.method == "GET":
-            html = self.index.read_text(encoding="utf-8").replace("{{APP_TITLE}}", settings.title).replace("{{APP_VERSION}}", __version__)
+            html = (
+                self.index.read_text(encoding="utf-8")
+                .replace("{{APP_TITLE}}", settings.title)
+                .replace("{{APP_VERSION}}", __version__)
+                .replace("{{SERVICE_WORKER_ENABLED}}", "true" if settings.service_worker_enabled else "false")
+            )
             return Response.text(html, 200, "text/html; charset=utf-8")
         return Response.text("Not found", 404)
 
