@@ -65,7 +65,12 @@ class Application:
         try:
             response = self.router.dispatch(request)
             if response is None:
-                response = self._frontend(request)
+                allowed_methods = self.router.allowed_methods(request.path)
+                if allowed_methods:
+                    response = Response.text("Method not allowed", 405)
+                    response.headers.append(("Allow", ", ".join(allowed_methods)))
+                else:
+                    response = self._frontend(request)
         except ValueError as exc:
             response = Response.text(str(exc), 400)
         except Exception as exc:
@@ -87,6 +92,8 @@ class Application:
                 return Response.text("Not found", 404)
             content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             return Response.file(target.read_bytes(), content_type)
+        if self._is_api_path(request.path):
+            return Response.text("Not found", 404)
         if request.method == "GET":
             app_config = json.dumps(
                 {
@@ -107,6 +114,21 @@ class Application:
             )
             return Response.text(html, 200, "text/html; charset=utf-8")
         return Response.text("Not found", 404)
+
+    @staticmethod
+    def _is_api_path(path: str) -> bool:
+        first_segment = path.lstrip("/").split("/", 1)[0].lower()
+        return first_segment in {
+            "account",
+            "inspection",
+            "collections",
+            "playground",
+            "playdevice",
+            "defect",
+            "document",
+            "pushsubscription",
+            "api",
+        }
 
 
 application = Application()

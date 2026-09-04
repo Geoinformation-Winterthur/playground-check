@@ -61,6 +61,21 @@ class ApplicationTest(unittest.TestCase):
         status, manifest, _ = self.request("GET", "/static/manifest.webmanifest")
         self.assertEqual(manifest["short_name"], "SPK")
 
+    def test_unknown_api_paths_do_not_fall_back_to_spa(self):
+        status, body, _ = self.request("GET", "/playground/not-a-route")
+        self.assertEqual(status, 404)
+        self.assertEqual(body, b"Not found")
+
+        status, body, _ = self.request("GET", "/defects-client-route")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Spielplatzkontrolle", body)
+
+    def test_known_api_path_with_wrong_method_returns_405(self):
+        status, body, captured = self.request("GET", "/account/login")
+        self.assertEqual(status, 405)
+        self.assertEqual(body, b"Method not allowed")
+        self.assertEqual(captured["headers"].get("Allow"), "POST")
+
     def test_jwt_round_trip_and_role_protection(self):
         token = self.token()
         self.assertEqual(

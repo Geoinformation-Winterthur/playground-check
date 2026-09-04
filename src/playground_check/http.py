@@ -98,6 +98,10 @@ class Router:
                 return result if isinstance(result, Response) else Response.json(result)
         return None
 
+    def allowed_methods(self, path: str) -> list[str]:
+        methods = {method for method, pattern, _ in self.routes if pattern.match(path)}
+        return sorted(methods)
+
 
 def status_line(code: int) -> str:
     try:
