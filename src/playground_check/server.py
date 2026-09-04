@@ -35,6 +35,10 @@ def create_router() -> Router:
     router.add("GET", r"/Playground/byplaydevice/(?P<fid>\d+)/?", service.get_playground_by_device)
     router.add("GET", r"/Playground/mapimage/?", service.get_map_image)
     router.add("GET", r"/Playground/(?P<id>\d+)/?", service.get_playground_by_id)
+    # ASP.NET's unconstrained {id} route also matches malformed values such as
+    # "123&inspectiontype=...". [ApiController] then rejects the failed int
+    # model binding with HTTP 400. Keep that legacy client bug observable.
+    router.add("GET", r"/Playground/(?P<invalid_id>[^/]+)/?", service.invalid_playground_id)
     router.add("POST", r"/Playdevice/?", service.save_playdevice)
     router.add("PUT", r"/Playdevice/?", service.exchange_playdevice_picture)
     router.add("GET", r"/Playdevice/(?P<fid>\d+)/Picture/?", service.get_playdevice_picture)

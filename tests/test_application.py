@@ -90,6 +90,16 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(status, 500)
         self.assertIn(b"Index was outside", message)
 
+    def test_malformed_legacy_playground_id_url_keeps_aspnet_model_binding_error(self):
+        status, result, _ = self.request(
+            "GET",
+            "/playground/1&inspectiontype=Hauptinspektion%20(HI)",
+            token=self.token(),
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], 400)
+        self.assertIn("1&inspectiontype=", result["errors"]["id"][0])
+
     def test_map_image_zero_coordinates(self):
         status, image, _ = self.request("GET", "/playground/mapimage?x=0&y=0")
         self.assertEqual(status, 200)

@@ -618,6 +618,19 @@ def get_playground_by_name(request: Request) -> Response:
     return Response.json(result)
 
 
+def invalid_playground_id(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    invalid_id = request.params.get("invalid_id", "")
+    return Response.json({
+        "type": "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+        "title": "One or more validation errors occurred.",
+        "status": 400,
+        "errors": {"id": [f"The value '{invalid_id}' is not valid."]},
+    }, 400)
+
+
 def get_playground_by_id(request: Request) -> Response:
     _, error = require_token(request)
     if error:
