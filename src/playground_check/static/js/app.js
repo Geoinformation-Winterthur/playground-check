@@ -44,7 +44,7 @@
     document.querySelector('#private-nav').classList.toggle('hidden',!logged);document.querySelector('#users-nav').classList.toggle('hidden',!logged||state.user?.role!=='administrator');
     if(logged)document.querySelector('#user-chip').textContent=state.user.initials;
   }
-  function navigate(path, replace=false){(replace?history.replaceState:history.pushState).call(history,{},'',path);renderRoute();if(innerWidth<=900)document.querySelector('#sidenav').classList.remove('open');}
+  function navigate(path, replace=false){(replace?history.replaceState:history.pushState).call(history,{},'',path);renderRoute();if(innerWidth<=599)document.querySelector('#sidenav').classList.remove('open');}
   function requireLogin(){if(!state.user){navigate('/login',true);return false;}return true;}
   function page(title, body){return `<div class="page"><h1 class="page-title">${title}</h1>${body}</div>`;}
   function field(label,name,value='',type='text',extra=''){return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" value="${attr(value)}" ${extra}></label>`;}
