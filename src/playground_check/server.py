@@ -99,7 +99,7 @@ class Application:
                 LOG.exception("Request failed: %s %s", request.method, request.path)
                 response = self._exception_response(exc)
         headers = [("Content-Type", response.content_type), ("Content-Length", str(len(response.body))),
-                   ("Access-Control-Allow-Origin", "*"), ("X-Content-Type-Options", "nosniff")]
+                   ("Access-Control-Allow-Origin", "*")]
         headers.extend(response.headers)
         start_response(status_line(response.status), headers)
         elapsed_ms = (time.perf_counter() - started) * 1000
@@ -177,6 +177,11 @@ class Application:
                     "playgroundKey": settings.playground_token_key,
                     "hideInfoCookieName": settings.hide_info_cookie_name,
                     "basePath": settings.base_path,
+                    "features": {
+                        "pushNotifications": settings.push_notifications,
+                        "defectAssignments": settings.defect_assignments,
+                    },
+                    "vapidPublicKey": settings.vapid_public_key,
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
