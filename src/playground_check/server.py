@@ -12,6 +12,7 @@ from . import __version__
 from .config import settings
 from .db import check_connection
 from .http import Request, Response, Router, status_line
+from .openapi import build_openapi_document, swagger_ui_html
 from . import service
 
 
@@ -106,6 +107,14 @@ class Application:
         return Request(environ)
 
     def _frontend(self, request: Request) -> Response:
+        if request.path in {"/swagger", "/swagger/"}:
+            response = Response.text("", 302)
+            response.headers.append(("Location", (settings.base_path or "") + "/swagger/index.html"))
+            return response
+        if request.path == "/swagger/index.html":
+            return Response.text(swagger_ui_html(settings.base_path), 200, "text/html; charset=utf-8")
+        if request.path == "/swagger/v1/swagger.json":
+            return Response.json(build_openapi_document())
         if request.path == "/api/health":
             return Response.json({"status":"ok","version":__version__})
         if request.path.startswith("/static/"):
@@ -155,6 +164,7 @@ class Application:
             "defect",
             "document",
             "pushsubscription",
+            "swagger",
             "api",
         }
 

@@ -63,6 +63,22 @@ class ApplicationTest(unittest.TestCase):
         status, manifest, _ = self.request("GET", "/static/manifest.webmanifest")
         self.assertEqual(manifest["short_name"], "SPK")
 
+    def test_swagger_openapi_endpoints_are_available_without_database(self):
+        status, document, _ = self.request("GET", "/swagger/v1/swagger.json")
+        self.assertEqual(status, 200)
+        self.assertEqual(document["openapi"], "3.0.1")
+        self.assertEqual(document["info"]["title"], "Winterthur Playground Regular Inspection API - V1")
+        self.assertIn("/Playground/byname", document["paths"])
+        self.assertIn("/Defect", document["paths"])
+
+        status, body, _ = self.request("GET", "/swagger/index.html")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Swagger / OpenAPI V1", body)
+
+        status, _, captured = self.request("GET", "/swagger")
+        self.assertEqual(status, 302)
+        self.assertEqual(captured["headers"].get("Location"), "/swagger/index.html")
+
     def test_configured_path_base_is_stripped_for_routing_and_exposed_to_frontend(self):
         configured = replace(server_module.settings, base_path="/stadtgruen/spielplatzkontrolle")
         with patch.object(server_module, "settings", configured):

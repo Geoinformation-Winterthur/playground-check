@@ -79,6 +79,7 @@ class Settings:
     token_issuer: str
     compatibility_bugs: bool
     service_worker_enabled: bool
+    service_description: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -108,6 +109,7 @@ class Settings:
             ),
             compatibility_bugs=_bool(os.getenv("PLAYGROUND_COMPATIBILITY_BUGS"), True),
             service_worker_enabled=_bool(os.getenv("PLAYGROUND_SERVICE_WORKER_ENABLED"), True),
+            service_description=os.getenv("PLAYGROUND_SERVICE_DESCRIPTION", os.getenv("ServiceDescription", "")),
         )
 
 
