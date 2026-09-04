@@ -19,11 +19,16 @@ from .http import Request, Response
 
 UNAUTHORIZED = "Sie sind entweder nicht als Kontrolleur in der Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung."
 DOTNET_MIN_DATE = "0001-01-01T00:00:00"
+VALID_ROLES = {"administrator", "inspector", "maintenance"}
+VALID_RESPONSIBILITIES = {
+    "Revier Mitte", "Revier Süd", "Revier West", "Revier Ost", "Dispo",
+    "Revier", "Spielplatzverantwortlicher", "Projektleiter",
+}
 
 USER_SELECT = '''SELECT fid, nachname AS last_name, vorname AS first_name,
     trim(lower(e_mail)) AS email, pwd, letzter_anmeldeversuch AS last_login_attempt,
     CURRENT_TIMESTAMP(0)::TIMESTAMP AS database_time, rolle AS role,
-    aktiv AS active, is_new
+    zustaendigkeit AS responsibility, aktiv AS active, is_new
     FROM "wgr_sp_kontrolleur"'''
 
 DEFECT_SELECT = '''SELECT tid, fid_spielgeraet AS playdevice_fid,
@@ -38,7 +43,8 @@ DEFECT_SELECT = '''SELECT tid, fid_spielgeraet AS playdevice_fid,
     datum_auftrag_abgelehnt AS assignment_rejected,
     bemerkung_auftrag AS assignment_comment,
     infomail_gesendet_am AS info_mail_sent_at,
-    infomail_empfaenger AS info_mail_recipient_name
+    infomail_empfaenger AS info_mail_recipient_name,
+    fid_erfassung AS created_by_fid
     FROM "wgr_sp_insp_mangel"'''
 
 
@@ -69,6 +75,7 @@ def _user_dict(row: Mapping[str, Any], include_password: bool = False) -> dict[s
         "passPhrase": row.get("pwd", "") if include_password else "",
         "active": bool(row.get("active")),
         "role": row.get("role") or "",
+        "responsibility": row.get("responsibility") or "",
         "errorMessage": "",
         "isNew": bool(row.get("is_new")),
     }
@@ -215,6 +222,10 @@ def update_user(request: Request) -> Response:
     email = str(body.get("mailAddress") or "").strip().lower()
     if not email or "@" not in email:
         return Response.json({"errorMessage": "SPK-3"})
+    role = str(body.get("role") or "").strip()
+    responsibility = str(body.get("responsibility") or "").strip()
+    if role not in VALID_ROLES or (responsibility and responsibility not in VALID_RESPONSIBILITIES):
+        return Response.json({"errorMessage": "SPK-3"})
     change_passphrase = _bool(request.query.get("changePassphrase"))
     try:
         with connect() as db:
@@ -230,9 +241,10 @@ def update_user(request: Request) -> Response:
                     return Response.json({"errorMessage": "SPK-3"})
             affected = db.execute(
                 '''UPDATE "wgr_sp_kontrolleur"
-                   SET nachname=%s, vorname=%s, rolle=%s, aktiv=%s, is_new=%s
+                   SET nachname=%s, vorname=%s, rolle=%s, zustaendigkeit=%s, aktiv=%s, is_new=%s
                    WHERE e_mail=%s''',
-                (body.get("lastName") or "", body.get("firstName") or "", body.get("role") or "",
+                (body.get("lastName") or "", body.get("firstName") or "", role,
+                 responsibility or None,
                  _bool(body.get("active")), _bool(body.get("isNew")), email),
             ).rowcount
             password_affected = 0
@@ -419,6 +431,18 @@ def get_map_image(request: Request) -> Response:
         return Response.json(base64.b64encode(response.read()).decode("ascii"))
 
 
+def _defect_creator_name(db: Connection, fid: Any) -> str:
+    if not fid:
+        return ""
+    row = db.execute(
+        'SELECT vorname AS first_name, nachname AS last_name FROM "wgr_sp_kontrolleur" WHERE fid=%s',
+        (fid,),
+    ).fetchone()
+    if not row:
+        return ""
+    return f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+
+
 def _defect_dict(db: Connection, row: Mapping[str, Any], pictures: bool = True) -> dict[str, Any]:
     before: list[int] = []
     after: list[int] = []
@@ -443,7 +467,10 @@ def _defect_dict(db: Connection, row: Mapping[str, Any], pictures: bool = True) 
         "dateAssignmentRejected": row.get("assignment_rejected"),
         "assignmentComment": row.get("assignment_comment") or "",
         "infoMailSentAt": row.get("info_mail_sent_at"),
-        "infoMailRecipientName": row.get("info_mail_recipient_name") or "", "errorMessage": "",
+        "infoMailRecipientName": row.get("info_mail_recipient_name") or "",
+        "createdByFid": row.get("created_by_fid") or -1,
+        "createdByName": _defect_creator_name(db, row.get("created_by_fid")),
+        "errorMessage": "",
     }
 
 
@@ -723,6 +750,16 @@ def get_defect(request: Request) -> Response:
     return Response.json(result)
 
 
+def _priority_two_fields_complete(body: Mapping[str, Any]) -> bool:
+    try:
+        priority = int(body.get("priority") or 0)
+        responsible_body = int(body.get("defectsResponsibleBodyId") or -1)
+        responsible_user = int(body.get("responsibleUserFid") or -1)
+    except (TypeError, ValueError):
+        return False
+    return priority != 2 or (responsible_body > 0 and responsible_user > 0)
+
+
 def create_defect(request: Request) -> Response:
     user, error = require_user(request)
     if error:
@@ -731,6 +768,9 @@ def create_defect(request: Request) -> Response:
     body.pop("done", None)
     if not body.get("defectDescription"):
         return Response.json(body)
+    if not _priority_two_fields_complete(body):
+        body["errorMessage"] = "SPK-10"
+        return Response.json(body)
     try:
         responsible = int(body.get("responsibleUserFid") or -1)
         date_done = date.today() if body.get("dateDone") is not None else None
@@ -738,15 +778,17 @@ def create_defect(request: Request) -> Response:
             row = db.execute('''INSERT INTO "wgr_sp_insp_mangel"
                 (tid, fid_spielgeraet, datum, id_dringlichkeit, beschrieb, bemerkunng,
                  datum_erledigung, fid_erledigung, id_zustaendig_behebung,
-                 fid_zustaendig_kontrolleur, auftrag_status, datum_auftrag_zugewiesen, bemerkung_auftrag)
+                 fid_zustaendig_kontrolleur, auftrag_status, datum_auftrag_zugewiesen, bemerkung_auftrag,
+                 fid_erfassung)
                 VALUES ((SELECT CASE WHEN max(tid) IS NULL THEN 1 ELSE max(tid)+1 END FROM "wgr_sp_insp_mangel"),
-                 %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING tid''',
                 (body.get("playdeviceFid"), body.get("priority"), body.get("defectDescription") or "",
                  body.get("defectComment") or "", date_done, user["fid"] if date_done else None,
                  body.get("defectsResponsibleBodyId") if int(body.get("defectsResponsibleBodyId") or -1) > 0 else None,
                  responsible if responsible > 0 else None, "zugewiesen" if responsible > 0 else None,
-                 datetime.now() if responsible > 0 else None, (body.get("assignmentComment") or "").strip() or None),
+                 datetime.now() if responsible > 0 else None, (body.get("assignmentComment") or "").strip() or None,
+                 user["fid"]),
             ).fetchone()
         body["tid"] = row["tid"]
         body.setdefault("errorMessage", "")
@@ -762,6 +804,8 @@ def update_defect(request: Request) -> Response:
     body = request.json() or {}
     if not body:
         return Response.json({"errorMessage": "SPK-4"})
+    if not _priority_two_fields_complete(body):
+        return Response.json({"errorMessage": "SPK-10"})
     try:
         responsible = int(body.get("responsibleUserFid") or -1)
         date_done = _date_value(body.get("dateDone"))
@@ -939,6 +983,8 @@ def post_inspections(request: Request) -> Response:
     user = current_user(request, dry_run=_bool(request.query.get("dryRun")))
     if not user:
         return Response.text("Unauthorized", 401)
+    if user.get("role") == "maintenance":
+        return Response.text("Benutzer der Rolle Wartung dürfen keine Kontrollen durchführen.", 403)
     reports = request.json()
     if not isinstance(reports, list) or not reports:
         return Response.json({"errorMessage": "SPK-0"})
