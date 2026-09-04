@@ -132,6 +132,24 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(body, b"Method not allowed")
         self.assertEqual(captured["headers"].get("Allow"), "POST")
 
+    def test_login_rejects_mail_addresses_rejected_by_legacy_mailaddress(self):
+        invalid_addresses = (
+            "edgar@@win.ch",
+            "edgar@",
+            "@win.ch",
+            "edgar..butwilowski@win.ch",
+        )
+        with patch.object(service, "connect", side_effect=AssertionError("database must not be touched")):
+            for email in invalid_addresses:
+                with self.subTest(email=email):
+                    status, body, _ = self.request(
+                        "POST",
+                        "/account/login",
+                        {"mailAddress": email, "passPhrase": "test"},
+                    )
+                    self.assertEqual(status, 400)
+                    self.assertEqual(body, b"Keine oder falsche Login-Daten.")
+
     def test_jwt_round_trip_and_role_protection(self):
         token = self.token()
         self.assertEqual(

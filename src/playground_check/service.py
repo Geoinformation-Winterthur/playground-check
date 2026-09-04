@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import date, datetime
+from email.headerregistry import Address
 from time import sleep
 from typing import Any, Mapping
 from urllib.error import HTTPError
@@ -120,13 +121,27 @@ def require_user(request: Request, role: str | None = None) -> tuple[dict[str, A
     return (user, None) if user else (None, Response.text(UNAUTHORIZED, 401))
 
 
+def _valid_mail_address(value: str) -> bool:
+    try:
+        parsed = Address(addr_spec=value)
+    except (TypeError, ValueError):
+        return False
+    return parsed.addr_spec == value
+
+
 def login(request: Request) -> Response:
     body = request.json()
     if not isinstance(body, dict) or body.get("mailAddress") is None:
         return Response.text("Keine oder falsche Login-Daten.", 400)
     email = str(body.get("mailAddress", "")).lower().strip()
     password = body.get("passPhrase")
-    if not email or any(char.isspace() for char in email) or "@" not in email or not isinstance(password, str) or not password.strip():
+    if (
+        not email
+        or any(char.isspace() for char in email)
+        or not _valid_mail_address(email)
+        or not isinstance(password, str)
+        or not password.strip()
+    ):
         return Response.text("Keine oder falsche Login-Daten.", 400)
     dry_run = _bool(request.query.get("dryRun"))
     try:
