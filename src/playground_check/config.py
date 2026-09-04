@@ -80,6 +80,11 @@ class Settings:
     compatibility_bugs: bool
     service_worker_enabled: bool
     service_description: str
+    elk_url: str
+    elk_verify_ssl: bool
+    elk_environment: str
+    elk_directory: str
+    elk_service: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -110,6 +115,23 @@ class Settings:
             compatibility_bugs=_bool(os.getenv("PLAYGROUND_COMPATIBILITY_BUGS"), True),
             service_worker_enabled=_bool(os.getenv("PLAYGROUND_SERVICE_WORKER_ENABLED"), True),
             service_description=os.getenv("PLAYGROUND_SERVICE_DESCRIPTION", os.getenv("ServiceDescription", "")),
+            elk_url=os.getenv("PLAYGROUND_ELK_URL", os.getenv("ELK__Url", "")).strip(),
+            elk_verify_ssl=_bool(os.getenv("PLAYGROUND_ELK_VERIFY_SSL", os.getenv("ELK__VerifySsl")), True),
+            elk_environment=(
+                os.getenv("PLAYGROUND_ELK_ENVIRONMENT", "").strip()
+                or os.getenv("ELK__Environment", "").strip()
+                or os.getenv("ASPNETCORE_ENVIRONMENT", "Production").lower()
+            ),
+            elk_directory=(
+                os.getenv("PLAYGROUND_ELK_DIRECTORY", "").strip()
+                or os.getenv("ELK__Directory", "").strip()
+                or str(PROJECT_ROOT)
+            ),
+            elk_service=(
+                os.getenv("PLAYGROUND_ELK_SERVICE", "").strip()
+                or os.getenv("ELK__Service", "").strip()
+                or "playground-check-service"
+            ),
         )
 
 

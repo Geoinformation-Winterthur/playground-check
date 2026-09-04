@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import logging
 import unittest
 from decimal import Decimal
 from dataclasses import replace
@@ -15,6 +16,7 @@ from playground_check import service
 from playground_check.auth import decode_token, issue_token
 from playground_check.config import _npgsql_to_libpq, load_environment
 from playground_check.http import Response
+from playground_check.logging_ext import ElkLogHandler
 from playground_check.server import Application
 
 
@@ -78,6 +80,28 @@ class ApplicationTest(unittest.TestCase):
         status, _, captured = self.request("GET", "/swagger")
         self.assertEqual(status, 302)
         self.assertEqual(captured["headers"].get("Location"), "/swagger/index.html")
+
+
+    def test_elk_payload_matches_legacy_shape(self):
+        handler = ElkLogHandler(
+            url="http://127.0.0.1:9/elk", verify_ssl=True, environment="test",
+            directory="/srv/playground", service="playground-check-service", hostname="wsstadt573",
+        )
+        try:
+            record = logging.LogRecord(
+                "playground_check", logging.INFO, __file__, 1,
+                "HTTP %s responded %s", ("GET /api/health", 200), None,
+            )
+            record.elk_details = ["RequestMethod=GET", "StatusCode=200"]
+            payload = handler.build_payload(record)
+            self.assertEqual(payload["host"], "wsstadt573")
+            self.assertEqual(payload["environment"], "test")
+            self.assertEqual(payload["level"], "INFO")
+            self.assertEqual(payload["service"], "playground-check-service")
+            self.assertEqual(payload["details"], ["RequestMethod=GET", "StatusCode=200"])
+            self.assertTrue(payload["@timestamp"].endswith("Z"))
+        finally:
+            handler.close()
 
     def test_configured_path_base_is_stripped_for_routing_and_exposed_to_frontend(self):
         configured = replace(server_module.settings, base_path="/stadtgruen/spielplatzkontrolle")

@@ -5,6 +5,7 @@ import json
 import logging
 import mimetypes
 import os
+import time
 from pathlib import Path
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
@@ -13,10 +14,12 @@ from .config import settings
 from .db import check_connection
 from .http import Request, Response, Router, status_line
 from .openapi import build_openapi_document, swagger_ui_html
+from .logging_ext import configure_logging
 from . import service
 
 
 LOG = logging.getLogger("playground_check")
+configure_logging(settings)
 
 
 def create_router() -> Router:
@@ -66,32 +69,41 @@ class Application:
         self.index = Path(__file__).with_name("templates") / "index.html"
 
     def __call__(self, environ, start_response):
+        started = time.perf_counter()
         external_request = Request(environ)
         request = self._path_base_request(external_request)
         if request is None:
             response = Response.text("Not found", 404)
-            headers = [("Content-Type", response.content_type), ("Content-Length", str(len(response.body))),
-                       ("Access-Control-Allow-Origin", "*"), ("X-Content-Type-Options", "nosniff")]
-            start_response(status_line(response.status), headers)
-            return [response.body]
-        try:
-            response = self.router.dispatch(request)
-            if response is None:
-                allowed_methods = self.router.allowed_methods(request.path)
-                if allowed_methods:
-                    response = Response.text("Method not allowed", 405)
-                    response.headers.append(("Allow", ", ".join(allowed_methods)))
-                else:
-                    response = self._frontend(request)
-        except ValueError as exc:
-            response = Response.text(str(exc), 400)
-        except Exception as exc:
-            LOG.exception("Request failed: %s %s", request.method, request.path)
-            response = Response.text(str(exc), 500)
+        else:
+            try:
+                response = self.router.dispatch(request)
+                if response is None:
+                    allowed_methods = self.router.allowed_methods(request.path)
+                    if allowed_methods:
+                        response = Response.text("Method not allowed", 405)
+                        response.headers.append(("Allow", ", ".join(allowed_methods)))
+                    else:
+                        response = self._frontend(request)
+            except ValueError as exc:
+                response = Response.text(str(exc), 400)
+            except Exception as exc:
+                LOG.exception("Request failed: %s %s", request.method, request.path)
+                response = Response.text(str(exc), 500)
         headers = [("Content-Type", response.content_type), ("Content-Length", str(len(response.body))),
                    ("Access-Control-Allow-Origin", "*"), ("X-Content-Type-Options", "nosniff")]
         headers.extend(response.headers)
         start_response(status_line(response.status), headers)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        LOG.info(
+            "HTTP %s %s responded %s in %.4f ms",
+            external_request.method, external_request.path, response.status, elapsed_ms,
+            extra={"elk_details": [
+                f"RequestMethod={external_request.method}",
+                f"RequestPath={external_request.path}",
+                f"StatusCode={response.status}",
+                f"Elapsed={elapsed_ms:.4f}",
+            ]},
+        )
         return [response.body]
 
     def _path_base_request(self, request: Request) -> Request | None:
@@ -174,7 +186,8 @@ application = Application()
 
 class QuietHandler(WSGIRequestHandler):
     def log_message(self, fmt, *args):
-        LOG.info("%s - %s", self.address_string(), fmt % args)
+        # Request completion is logged centrally above, equivalent to UseSerilogRequestLogging().
+        return
 
 
 def main() -> None:
@@ -187,7 +200,6 @@ def main() -> None:
         check_connection()
         print("PostgreSQL-Verbindung erfolgreich geprüft.")
         return
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print(f"Spielplatzkontrolle {__version__} läuft auf http://{args.host}:{args.port}")
     with make_server(args.host, args.port, application, handler_class=QuietHandler) as httpd:
         try:
