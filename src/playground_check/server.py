@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import mimetypes
 import os
@@ -87,10 +88,21 @@ class Application:
             content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
             return Response.file(target.read_bytes(), content_type)
         if request.method == "GET":
+            app_config = json.dumps(
+                {
+                    "tokenKey": settings.playground_user_token_key,
+                    "playgroundKey": settings.playground_token_key,
+                    "hideInfoCookieName": settings.hide_info_cookie_name,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).replace("<", "\\u003c")
             html = (
                 self.index.read_text(encoding="utf-8")
                 .replace("{{APP_TITLE}}", settings.title)
+                .replace("{{APP_SHORT_TITLE}}", settings.short_title)
                 .replace("{{APP_VERSION}}", __version__)
+                .replace("{{APP_CONFIG}}", app_config)
                 .replace("{{SERVICE_WORKER_ENABLED}}", "true" if settings.service_worker_enabled else "false")
             )
             return Response.text(html, 200, "text/html; charset=utf-8")

@@ -1,8 +1,10 @@
 (() => {
   'use strict';
 
-  const TOKEN_KEY = 'playground.user.token';
-  const PLAYGROUND_KEY = 'playground.token';
+  const APP_CONFIG = window.APP_CONFIG || {};
+  const TOKEN_KEY = APP_CONFIG.tokenKey || 'playground.user.token';
+  const PLAYGROUND_KEY = APP_CONFIG.playgroundKey || 'playground.token';
+  const HIDE_INFO_COOKIE_NAME = APP_CONFIG.hideInfoCookieName || 'hide_info';
   const FEATURES = {pushNotifications:false, defectAssignments:false};
   const VAPID_PUBLIC_KEY = 'BGwoqHwV5SrixvSr9YQ58M9U5MzFZ7m5rCrWrGBmMpPVkaWbCwJtL7KWAZFTeZps_2zcdguI1_R-ZtgpLIzPu6Y';
   const CLAIMS = {
@@ -226,7 +228,7 @@
   async function renderRoute(){updateShell();const path=location.pathname;try{if(path==='/'){renderWelcome();}else if(path==='/login'){renderLogin();}else if(!requireLogin())return;else if(path==='/choosedevice'){await playgroundPicker('overview');}else if(path==='/inspections'){await playgroundPicker('inspection');}else if(path==='/defects'){await playgroundPicker('defect');}else if(/^\/deviceattributes\/[^/]+\/\d+$/.test(path)){await renderDeviceAttributes(Number(path.split('/').pop()));}else if(/^\/defect\/\d+\/\d+$/.test(path)){const p=path.split('/');await renderDefect(Number(p[2]),Number(p[3]));}else if(path==='/users'){await renderUsers();}else if(path.startsWith('/users/')){await renderUser(decodeURIComponent(path.slice(7)));}else if(path==='/notifications'){await renderNotifications();}else{navigate('/',true);return;}bindRouteLinks();content.focus();}catch(e){if(e.status===401){localStorage.removeItem(TOKEN_KEY);state.user=null;updateShell();navigate('/login',true);}else{console.error(e);content.innerHTML=page('Fehler',`<div class="info-box warning">${esc(e.message||'Unbekannter Fehler')}</div>`);}}}
 
   document.querySelector('#menu-button').onclick=()=>document.querySelector('#sidenav').classList.toggle('open');document.querySelector('#login-button').onclick=()=>navigate('/login');document.querySelector('#user-chip').onclick=()=>document.querySelector('#user-menu').classList.toggle('hidden');document.querySelector('#logout-button').onclick=async()=>{await clearPlayground();localStorage.clear();state.user=null;document.querySelector('#user-menu').classList.add('hidden');updateShell();navigate('/');};window.onpopstate=renderRoute;bindRouteLinks();
-  if(!document.cookie.includes('hide_info=true')){const box=document.createElement('div');box.className='cookie';box.innerHTML='<button>X</button>Diese App verwendet Cookies. Nähere Informationen im Impressum.';box.querySelector('button').onclick=()=>{document.cookie='hide_info=true; Max-Age=1576800000; SameSite=Lax; Path=/';box.remove();};document.body.appendChild(box);}
+  if(!document.cookie.includes(`${HIDE_INFO_COOKIE_NAME}=true`)){const box=document.createElement('div');box.className='cookie';box.innerHTML='<button>X</button>Diese App verwendet Cookies. Nähere Informationen im Impressum.';box.querySelector('button').onclick=()=>{document.cookie=`${HIDE_INFO_COOKIE_NAME}=true; Max-Age=1576800000; SameSite=Lax; Path=/`;box.remove();};document.body.appendChild(box);}
   if(window.SERVICE_WORKER_ENABLED!==false&&'serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/static/sw.js').catch(()=>{}));navigator.serviceWorker.addEventListener('message',event=>{const message=event.data?.message||event.data;if(message?.title)toast(message.title,6000);else if(message?.notification?.title)toast(message.notification.title,6000);});}
   loadStoredPlayground().then(pg=>{state.selectedPlayground=pg;renderRoute();});
 })();

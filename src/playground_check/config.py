@@ -61,6 +61,10 @@ class Settings:
     security_key: str
     salt: bytes
     title: str
+    short_title: str
+    playground_token_key: str
+    playground_user_token_key: str
+    hide_info_cookie_name: str
     wms_url: str
     token_issuer: str
     compatibility_bugs: bool
@@ -82,6 +86,10 @@ class Settings:
             security_key=os.getenv("PLAYGROUND_SECURITY_KEY", os.getenv("SecurityKey", "development-only-security-key")),
             salt=salt,
             title=os.getenv("PLAYGROUND_TITLE", "Spielplatzkontrolle"),
+            short_title=os.getenv("PLAYGROUND_SHORT_TITLE", "SPK"),
+            playground_token_key=os.getenv("PLAYGROUND_TOKEN_KEY", "playground.token"),
+            playground_user_token_key=os.getenv("PLAYGROUND_USER_TOKEN_KEY", "playground.user.token"),
+            hide_info_cookie_name=os.getenv("PLAYGROUND_HIDE_INFO_COOKIE_NAME", "hide_info"),
             wms_url=os.getenv("PLAYGROUND_WMS_URL", os.getenv("WMS__ServiceUrl", "http://stadtplan.winterthur.ch/wms/Spielplatzkarte")),
             token_issuer=os.getenv(
                 "PLAYGROUND_SERVICE_URL",
