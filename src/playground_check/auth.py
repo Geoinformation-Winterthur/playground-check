@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from .config import settings
+
+EMAIL = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+GIVEN_NAME = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
+NAME = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+ROLE = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+
+
+def hash_passphrase(passphrase: str) -> str:
+    value = hashlib.pbkdf2_hmac("sha256", passphrase.encode("utf-8"), settings.salt, 100_000, 32)
+    return base64.b64encode(value).decode("ascii")
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _unb64url(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def issue_token(user: dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
+    # Compatibility note: the original service does not emit the fid claim even though
+    # the Angular client attempts to read it. That observable quirk is preserved.
+    payload = {
+        EMAIL: user["mailAddress"],
+        GIVEN_NAME: user["firstName"],
+        NAME: user["lastName"],
+        ROLE: user["role"],
+        "iss": settings.token_issuer,
+        "aud": settings.token_issuer,
+        "nbf": int(now.timestamp()),
+        "exp": int((now + timedelta(days=2)).timestamp()),
+    }
+    header = {"alg": "HS256", "typ": "JWT"}
+    unsigned = f"{_b64url(json.dumps(header, separators=(',', ':')).encode())}.{_b64url(json.dumps(payload, separators=(',', ':')).encode())}"
+    signature = hmac.new(settings.security_key.encode(), unsigned.encode(), hashlib.sha256).digest()
+    return f"{unsigned}.{_b64url(signature)}"
+
+
+def decode_token(token: str) -> dict[str, Any] | None:
+    try:
+        head, body, signature = token.split(".")
+        unsigned = f"{head}.{body}"
+        expected = hmac.new(settings.security_key.encode(), unsigned.encode(), hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, _unb64url(signature)):
+            return None
+        payload = json.loads(_unb64url(body))
+        now = int(time.time())
+        if int(payload.get("exp", 0)) <= now or int(payload.get("nbf", 0)) > now:
+            return None
+        if payload.get("iss") != settings.token_issuer or payload.get("aud") != settings.token_issuer:
+            return None
+        return payload
+    except Exception:
+        return None

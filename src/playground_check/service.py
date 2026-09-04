@@ -1,0 +1,1046 @@
+from __future__ import annotations
+
+import base64
+import binascii
+from datetime import date, datetime
+from time import sleep
+from typing import Any, Mapping
+from urllib.error import HTTPError
+from urllib.request import urlopen
+
+from psycopg import Connection
+
+from .auth import EMAIL, GIVEN_NAME, NAME, ROLE, decode_token, hash_passphrase, issue_token
+from .config import settings
+from .db import connect
+from .http import Request, Response
+
+
+UNAUTHORIZED = "Sie sind entweder nicht als Kontrolleur in der Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung."
+DOTNET_MIN_DATE = "0001-01-01T00:00:00"
+
+USER_SELECT = '''SELECT fid, nachname AS last_name, vorname AS first_name,
+    trim(lower(e_mail)) AS email, pwd, letzter_anmeldeversuch AS last_login_attempt,
+    CURRENT_TIMESTAMP(0)::TIMESTAMP AS database_time, rolle AS role,
+    aktiv AS active, is_new
+    FROM "wgr_sp_kontrolleur"'''
+
+DEFECT_SELECT = '''SELECT tid, fid_spielgeraet AS playdevice_fid,
+    id_dringlichkeit AS priority, beschrieb AS description,
+    datum_erledigung AS date_done, fid_erledigung AS done_by,
+    bemerkunng AS comment, datum AS date_creation,
+    id_zustaendig_behebung AS responsible_body_id,
+    fid_zustaendig_kontrolleur AS responsible_user_fid,
+    auftrag_status AS assignment_status,
+    datum_auftrag_zugewiesen AS assignment_created,
+    datum_auftrag_angenommen AS assignment_accepted,
+    datum_auftrag_abgelehnt AS assignment_rejected,
+    bemerkung_auftrag AS assignment_comment,
+    infomail_gesendet_am AS info_mail_sent_at,
+    infomail_empfaenger AS info_mail_recipient_name
+    FROM "wgr_sp_insp_mangel"'''
+
+
+def _bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _date_value(value: Any) -> date | datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (date, datetime)):
+        return value
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return date.fromisoformat(text[:10])
+
+
+def _user_dict(row: Mapping[str, Any], include_password: bool = False) -> dict[str, Any]:
+    return {
+        "fid": row.get("fid", -1),
+        "lastName": (row.get("last_name") or "").strip(),
+        "firstName": (row.get("first_name") or "").strip(),
+        "mailAddress": (row.get("email") or "").strip().lower(),
+        "passPhrase": row.get("pwd", "") if include_password else "",
+        "active": bool(row.get("active")),
+        "role": row.get("role") or "",
+        "errorMessage": "",
+        "isNew": bool(row.get("is_new")),
+    }
+
+
+def token_user(request: Request, role: str | None = None) -> dict[str, Any] | None:
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    payload = decode_token(auth[7:].strip())
+    if not payload:
+        return None
+    result = {
+        "fid": -1,
+        "mailAddress": str(payload.get(EMAIL, "")).strip().lower(),
+        "firstName": str(payload.get(GIVEN_NAME, "")),
+        "lastName": str(payload.get(NAME, "")),
+        "role": str(payload.get(ROLE, "")),
+        "active": True,
+    }
+    if not result["mailAddress"] or (role and result["role"] != role):
+        return None
+    return result
+
+
+def current_user(request: Request, role: str | None = None, dry_run: bool = False) -> dict[str, Any] | None:
+    # The original getAuthorizedUser deliberately returns null for dry runs.
+    if dry_run:
+        return None
+    claimed = token_user(request, role)
+    if not claimed:
+        return None
+    with connect() as db:
+        row = db.execute(USER_SELECT + " WHERE trim(lower(e_mail))=%s", (claimed["mailAddress"],)).fetchone()
+    if not row or not row["active"]:
+        return None
+    user = _user_dict(row)
+    if role and user["role"] != role:
+        return None
+    return user
+
+
+def require_token(request: Request, role: str | None = None) -> tuple[dict[str, Any] | None, Response | None]:
+    user = token_user(request, role)
+    return (user, None) if user else (None, Response.text(UNAUTHORIZED, 401))
+
+
+def require_user(request: Request, role: str | None = None) -> tuple[dict[str, Any] | None, Response | None]:
+    user = current_user(request, role, _bool(request.query.get("dryRun")))
+    return (user, None) if user else (None, Response.text(UNAUTHORIZED, 401))
+
+
+def login(request: Request) -> Response:
+    body = request.json()
+    if not isinstance(body, dict) or body.get("mailAddress") is None:
+        return Response.text("Keine oder falsche Login-Daten.", 400)
+    email = str(body.get("mailAddress", "")).lower().strip()
+    password = body.get("passPhrase")
+    if not email or any(char.isspace() for char in email) or "@" not in email or not isinstance(password, str) or not password.strip():
+        return Response.text("Keine oder falsche Login-Daten.", 400)
+    dry_run = _bool(request.query.get("dryRun"))
+    try:
+        with connect() as db:
+            row = None if dry_run else db.execute(
+                USER_SELECT + " WHERE trim(lower(e_mail))=%s", (email,)
+            ).fetchone()
+            if row:
+                if row.get("last_login_attempt") is not None:
+                    elapsed = (row["database_time"] - row["last_login_attempt"]).total_seconds()
+                    if elapsed < 3:
+                        sleep(3)
+                db.execute(
+                    "UPDATE \"wgr_sp_kontrolleur\" SET letzter_anmeldeversuch=CURRENT_TIMESTAMP "
+                    "WHERE trim(lower(e_mail))=%s", (email,),
+                )
+                if row.get("pwd") == hash_passphrase(password) and row.get("active"):
+                    user = _user_dict(row)
+                    user["lastName"] = user["lastName"] or "Nachname unbekannt"
+                    user["firstName"] = user["firstName"] or "Vorname unbekannt"
+                    return Response.json({"securityTokenString": issue_token(user)})
+                return Response.text("Keine oder falsche Login-Daten.", 401)
+
+            # Preserved original quirk: dryRun also reaches this insert branch.
+            db.execute(
+                '''INSERT INTO "wgr_sp_kontrolleur"
+                    (nachname, vorname, e_mail, pwd, rolle, aktiv, is_new)
+                    VALUES (%s, %s, %s, %s, 'inspector', false, true)''',
+                (body.get("lastName") or "", body.get("firstName") or "", email, hash_passphrase(password)),
+            )
+        return Response.text(
+            UNAUTHORIZED + "Der Administrator wird informiert und wird Ihnen gegebenenfalls den Zugriff gewähren.", 401
+        )
+    except Exception:
+        return Response.text("Ein kritischer Fehler ist aufgetreten. Bitte kontaktieren Sie den Administrator.", 400)
+
+
+def get_users(request: Request) -> Response:
+    _, error = require_token(request, "administrator")
+    if error:
+        return error
+    email = request.query.get("email", "").strip().lower()
+    sql, params = USER_SELECT, ()
+    if email:
+        sql += " WHERE trim(lower(e_mail))=%s"
+        params = (email,)
+    sql += " ORDER BY vorname, nachname"
+    with connect() as db:
+        rows = db.execute(sql, params).fetchall()
+    return Response.json([_user_dict(row) for row in rows if row.get("email")])
+
+
+def get_assignable_users(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    with connect() as db:
+        rows = db.execute(USER_SELECT + " WHERE aktiv=true ORDER BY vorname, nachname").fetchall()
+    return Response.json([_user_dict(row) for row in rows])
+
+
+def update_user(request: Request) -> Response:
+    _, error = require_token(request, "administrator")
+    if error:
+        return error
+    body = request.json()
+    if not isinstance(body, dict):
+        return Response.json({"errorMessage": "SPK-3"})
+    password = str(body.get("passPhrase") or "")
+    body["passPhrase"] = ""
+    email = str(body.get("mailAddress") or "").strip().lower()
+    if not email or "@" not in email:
+        return Response.json({"errorMessage": "SPK-3"})
+    change_passphrase = _bool(request.query.get("changePassphrase"))
+    try:
+        with connect() as db:
+            existing = db.execute(USER_SELECT + " WHERE trim(lower(e_mail))=%s", (email,)).fetchall()
+            if len(existing) != 1:
+                return Response.json({"errorMessage": "SPK-3"})
+            active_admins = db.execute(
+                "SELECT count(*) AS count FROM \"wgr_sp_kontrolleur\" WHERE aktiv=true AND rolle='administrator'"
+            ).fetchone()["count"]
+            old = existing[0]
+            if old["role"] == "administrator" and active_admins == 1:
+                if body.get("role") != "administrator" or not _bool(body.get("active")):
+                    return Response.json({"errorMessage": "SPK-3"})
+            affected = db.execute(
+                '''UPDATE "wgr_sp_kontrolleur"
+                   SET nachname=%s, vorname=%s, rolle=%s, aktiv=%s, is_new=%s
+                   WHERE e_mail=%s''',
+                (body.get("lastName") or "", body.get("firstName") or "", body.get("role") or "",
+                 _bool(body.get("active")), _bool(body.get("isNew")), email),
+            ).rowcount
+            password_affected = 0
+            if change_passphrase:
+                password = password.strip()
+                if len(password) < 8:
+                    return Response.json({"errorMessage": "SPK-9"})
+                password_affected = db.execute(
+                    "UPDATE \"wgr_sp_kontrolleur\" SET pwd=%s WHERE e_mail=%s",
+                    (hash_passphrase(password), email),
+                ).rowcount
+            if affected == 1 and (not change_passphrase or password_affected == 1):
+                body.setdefault("errorMessage", "")
+                return Response.json(body)
+    except Exception:
+        pass
+    return Response.json({"errorMessage": "SPK-3"})
+
+
+def delete_user(request: Request) -> Response:
+    _, error = require_token(request, "administrator")
+    if error:
+        return error
+    email = request.query.get("email", "").strip().lower()
+    if not email:
+        return Response.json({"errorMessage": "SPK-3"})
+    with connect() as db:
+        users = db.execute(USER_SELECT + " WHERE trim(lower(e_mail))=%s", (email,)).fetchall()
+        if len(users) != 1:
+            return Response.json({"errorMessage": "SPK-3"})
+        count = db.execute(
+            "SELECT count(*) AS count FROM \"wgr_sp_kontrolleur\" WHERE aktiv=true AND rolle='administrator'"
+        ).fetchone()["count"]
+        if users[0]["role"] == "administrator" and count == 1:
+            return Response.json({"errorMessage": "SPK-3"})
+        if db.execute("UPDATE \"wgr_sp_kontrolleur\" SET aktiv=false WHERE e_mail=%s", (email,)).rowcount == 1:
+            return Response(b"", 200, "application/json; charset=utf-8")
+    return Response.json({"errorMessage": "SPK-3"})
+
+
+def inspection_types(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    with connect() as db:
+        rows = db.execute('SELECT short_value, value FROM "wgr_sp_inspektionsart_tbd"').fetchall()
+    return Response.json([f"{row['value']} ({row['short_value']})" for row in rows])
+
+
+def renovation_types(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    with connect() as db:
+        rows = db.execute('SELECT value FROM "wgr_sp_sanierungsart_tbd"').fetchall()
+    return Response.json([row["value"] for row in rows])
+
+
+def _suspended(row: Mapping[str, Any]) -> bool:
+    today = date.today()
+    start = _date_value(row.get("suspend_from"))
+    end = _date_value(row.get("suspend_to"))
+    start_date = start.date() if isinstance(start, datetime) else start
+    end_date = end.date() if isinstance(end, datetime) else end
+    if start_date is None and end_date is None:
+        return False
+    if start_date is None:
+        return today <= end_date
+    if end_date is None:
+        return today >= start_date
+    return start_date <= today <= end_date
+
+
+def only_names(request: Request) -> Response:
+    user, error = require_token(request)
+    if error:
+        return error
+    inspection_type = request.query.get("inspectiontype", request.query.get("inspectionType", ""))
+    params: tuple[Any, ...] = ()
+    sql = '''SELECT DISTINCT ON (sp.name)
+        sp.name, insp.datum_inspektion AS date_of_last_inspection,
+        sp.inspektion_aussetzen_von AS suspend_from,
+        sp.inspektion_aussetzen_bis AS suspend_to,
+        (SELECT count(*) > 0 FROM "wgr_sp_insp_mangel" mangel
+         JOIN "gr_v_spielgeraete" geraete ON mangel.fid_spielgeraet=geraete.fid
+         WHERE geraete.fid_spielplatz=sp.fid AND mangel.fid_erledigung IS NULL) AS has_open
+        FROM "wgr_sp_spielplatz" sp
+        LEFT JOIN "wgr_sp_inspektion" insp ON insp.fid_spielplatz=sp.fid
+        ORDER BY sp.name, insp.datum_inspektion DESC'''
+    if user and inspection_type and inspection_type != "Keine Inspektion":
+        base_type = inspection_type[:-5]
+        sql = '''SELECT DISTINCT ON (sp.name)
+            sp.name, insp.datum_inspektion AS date_of_last_inspection,
+            sp.inspektion_aussetzen_von AS suspend_from,
+            sp.inspektion_aussetzen_bis AS suspend_to, false AS has_open
+            FROM "wgr_sp_spielplatz" sp
+            JOIN "wgr_sp_inspart_kontr" ikt ON sp.fid=ikt.fid_spielplatz
+            JOIN "wgr_sp_kontrolleur" kt ON kt.fid=ikt.fid_kontrolleur
+            JOIN "wgr_sp_inspektionsart_tbd" ina ON ina.id=ikt.id_inspektionsart
+            LEFT JOIN "wgr_sp_inspektion" insp ON insp.fid_spielplatz=sp.fid
+            WHERE kt.e_mail=%s AND ina.value=%s
+            ORDER BY sp.name, insp.datum_inspektion DESC'''
+        params = (user["mailAddress"], base_type)
+    with connect() as db:
+        rows = db.execute(sql, params).fetchall()
+    result = []
+    for row in rows:
+        suspended = _suspended(row)
+        if inspection_type != "Keine Inspektion" and suspended:
+            continue
+        result.append({
+            "id": 0, "name": row["name"], "address": "",
+            "dateOfLastInspection": row["date_of_last_inspection"] or DOTNET_MIN_DATE,
+            "suspendInspectionFrom": row["suspend_from"], "suspendInspectionTo": row["suspend_to"],
+            "inspectionSuspended": suspended, "hasOpenDeviceDefects": bool(row["has_open"]),
+            "playdevices": [], "defectPriorityOptions": [], "inspectionTypeOptions": [],
+            "renovationTypeOptions": [], "defectsResponsibleBodyOptions": [],
+            "documentsOfAcceptanceFids": [], "certificateDocumentsFids": [],
+        })
+    return Response.json(result)
+
+
+def _public_feature(row: Mapping[str, Any] | None = None, error: str = "") -> dict[str, Any]:
+    row = row or {}
+    coordinates = [] if row.get("x") is None else [row["x"], row["y"]]
+    return {
+        "type": "Feature",
+        "properties": {
+            "uuid": str(row.get("uuid") or ""), "nummer": row.get("number") if row.get("number") is not None else -1,
+            "name": row.get("name") or "", "streetName": row.get("street_name") or "", "houseNo": row.get("house_no") or "",
+        },
+        "geometry": {"type": "Point", "coordinates": coordinates},
+        "errorMessage": error,
+    }
+
+
+def public_playgrounds(request: Request) -> Response:
+    try:
+        with connect() as db:
+            rows = db.execute('''SELECT uuid::text AS uuid, nummer AS number, name,
+                strassenname AS street_name, hausnummer AS house_no,
+                ST_X(geom) AS x, ST_Y(geom) AS y FROM "wgr_sp_spielplatz"'''
+            ).fetchall()
+        return Response.json([_public_feature(row) for row in rows])
+    except Exception:
+        return Response.json([_public_feature(error="Unknown critical error.")])
+
+
+def public_playground(request: Request) -> Response:
+    uuid = request.params.get("uuid", "").strip().lower()
+    if not uuid:
+        return Response.json(_public_feature(error="No valid UUID provided."))
+    try:
+        with connect() as db:
+            row = db.execute('''SELECT uuid::text AS uuid, nummer AS number, name,
+                strassenname AS street_name, hausnummer AS house_no,
+                ST_X(geom) AS x, ST_Y(geom) AS y
+                FROM "wgr_sp_spielplatz" WHERE uuid::text=%s''', (uuid,)).fetchone()
+        if not row:
+            return Response.json(_public_feature({"uuid": uuid}, "No playground found for given UUID."))
+        return Response.json(_public_feature(row))
+    except Exception:
+        return Response.json(_public_feature({"uuid": uuid}, "Unknown critical error."))
+
+
+def get_map_image(request: Request) -> Response:
+    x = float(request.query.get("x", "0") or 0)
+    y = float(request.query.get("y", "0") or 0)
+    if x == 0 or y == 0:
+        return Response.json("")
+    endpoint = settings.wms_url.strip()
+    if not endpoint.lower().startswith(("http://", "https://")):
+        endpoint = "http://" + endpoint
+    if not endpoint.rstrip("/").endswith("Spielplatzkarte"):
+        endpoint = endpoint.rstrip("/") + "/Spielplatzkarte"
+    url = endpoint + "?LAYERS=AV_UEP_Landeskarten,Spielplatz&VERSION=1.1.1&DPI=96&TRANSPARENT=TRUE&FORMAT=image%2Fpng&" \
+        "SERVICE=WMS&REQUEST=GetMap&STYLES=&SRS=EPSG%3A2056&" \
+        f"BBOX={x-10},{y-5},{x+10},{y+5}&WIDTH=800&HEIGHT=400"
+    try:
+        response = urlopen(url, timeout=20)
+    except HTTPError as exc:
+        response = exc
+    with response:
+        return Response.json(base64.b64encode(response.read()).decode("ascii"))
+
+
+def _defect_dict(db: Connection, row: Mapping[str, Any], pictures: bool = True) -> dict[str, Any]:
+    before: list[int] = []
+    after: list[int] = []
+    if pictures:
+        rows = db.execute(
+            'SELECT tid, zeitpunkt AS after_fixing FROM "wgr_sp_insp_mangel_foto" WHERE tid_maengel=%s',
+            (row["tid"],),
+        ).fetchall()
+        for picture in rows:
+            (after if picture["after_fixing"] else before).append(picture["tid"])
+    return {
+        "tid": row["tid"], "playdeviceFid": row.get("playdevice_fid") or 0,
+        "priority": row.get("priority") if row.get("priority") is not None else -1,
+        "defectPicsTids": before, "defectPicsAfterFixingTids": after,
+        "defectDescription": row.get("description") or "", "dateCreation": row.get("date_creation"),
+        "dateDone": row.get("date_done"), "defectComment": row.get("comment") or "",
+        "defectsResponsibleBodyId": row.get("responsible_body_id") or -1,
+        "responsibleUserFid": row.get("responsible_user_fid") or -1,
+        "assignmentStatus": row.get("assignment_status") or "",
+        "dateAssignmentCreated": row.get("assignment_created"),
+        "dateAssignmentAccepted": row.get("assignment_accepted"),
+        "dateAssignmentRejected": row.get("assignment_rejected"),
+        "assignmentComment": row.get("assignment_comment") or "",
+        "infoMailSentAt": row.get("info_mail_sent_at"),
+        "infoMailRecipientName": row.get("info_mail_recipient_name") or "", "errorMessage": "",
+    }
+
+
+def _report_dict(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "tid": row.get("tid", -1), "inspectionType": row.get("inspection_type") or "",
+        "dateOfService": row.get("inspection_date"), "inspector": row.get("inspector") or "",
+        "inspectionText": row.get("inspection_text") or "", "inspectionDone": bool(row.get("inspection_done")),
+        "inspectionComment": row.get("inspection_comment") or "", "maintenanceText": row.get("maintenance_text") or "",
+        "maintenanceDone": bool(row.get("maintenance_done")), "maintenanceComment": row.get("maintenance_comment") or "",
+        "fallProtectionType": row.get("fall_protection") or "", "playdeviceFid": row.get("playdevice_fid") or 0,
+        "playdeviceDetailFid": row.get("playdevice_detail_fid") or 0,
+        "tidInspection": row.get("inspection_tid") if row.get("inspection_tid") is not None else -1,
+    }
+
+
+def _criterion_dict(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "realm": row.get("realm") or "", "designation": "", "check": row.get("check_text") or "",
+        "checkShortText": row.get("check_short_text") or "", "maintenance": row.get("maintenance") or "",
+        "beforeOpening": False, "weekly": False, "monthly": False, "yearly": False,
+        "inspectionType": row.get("inspection_type") or "",
+        "currentInspectionReport": {
+            "tid": 0, "inspectionType": "", "inspector": "", "inspectionText": "", "inspectionDone": False,
+            "inspectionComment": "", "maintenanceText": "", "maintenanceDone": False,
+            "maintenanceComment": "", "fallProtectionType": "", "playdeviceFid": 0, "playdeviceDetailFid": 0,
+        },
+    }
+
+
+def _playdevice_rows(db: Connection, playground_id: int) -> list[Mapping[str, Any]]:
+    return db.execute('''SELECT spg.fid, spg.bemerkungen AS comment,
+        ST_X(spg.geom) AS x, ST_Y(spg.geom) AS y,
+        gart.short_value AS type_name, gart.value AS type_description,
+        spg.norm AS standard, lief.name AS supplier,
+        spg.empfohlenes_sanierungsjahr AS recommended_year,
+        spg.bemerkung_empf_sanierung AS renovation_comment,
+        spg.nicht_zu_pruefen AS not_to_be_checked,
+        spg.nicht_pruefbar AS cannot_be_checked,
+        spg.grund_nicht_pruefbar AS cannot_be_checked_reason,
+        spg.bau_dat AS construction_date, spg.id_sanierungsart AS renovation_type
+        FROM "gr_v_spielgeraete" spg
+        LEFT JOIN "wgr_sp_spielgeraeteart_tbd" gart ON spg.id_geraeteart=gart.id
+        LEFT JOIN "wgr_sp_lieferant" lief ON spg.id_lieferant=lief.fid
+        WHERE spg.fid_spielplatz=%s''', (playground_id,)).fetchall()
+
+
+def _criteria(db: Connection, view: str, type_column: str, fid: int, inspection_type: str) -> list[dict[str, Any]]:
+    # View and column names are fixed constants originating in the C# service.
+    sql = f'''SELECT bereich AS realm, pruefung AS check_text, wartung AS maintenance,
+        {type_column} AS inspection_type, pruefung_kurztext AS check_short_text
+        FROM "{view}" WHERE fid_spielgeraet=%s AND {type_column}=%s'''
+    return [_criterion_dict(row) for row in db.execute(sql, (fid, inspection_type)).fetchall()]
+
+
+def _inspection_history(db: Connection, fid: int, inspection_types: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    last: list[dict[str, Any]] = []
+    previous: list[dict[str, Any]] = []
+    for inspection_type in inspection_types:
+        rows = db.execute('''SELECT tid, inspektionsart AS inspection_type,
+            datum_inspektion AS inspection_date, kontrolleur AS inspector,
+            pruefung_text AS inspection_text, pruefung_erledigt AS inspection_done,
+            pruefung_kommentar AS inspection_comment, wartung_text AS maintenance_text,
+            wartung_erledigung AS maintenance_done, wartung_kommentar AS maintenance_comment,
+            fallschutz AS fall_protection, tid_inspektion AS inspection_tid,
+            fid_spielgeraet AS playdevice_fid, fid_geraet_detail AS playdevice_detail_fid
+            FROM "wgr_sp_insp_bericht"
+            WHERE tid_inspektion IN (
+                SELECT tid_inspektion FROM "wgr_sp_insp_bericht"
+                WHERE fid_spielgeraet=%s AND inspektionsart=%s
+                GROUP BY tid_inspektion, datum_inspektion
+                ORDER BY datum_inspektion DESC LIMIT 2)
+              AND fid_spielgeraet=%s AND inspektionsart=%s
+            ORDER BY datum_inspektion, tid_inspektion DESC''',
+            (fid, inspection_type, fid, inspection_type),
+        ).fetchall()
+        if not rows:
+            continue
+        first_tid = rows[0].get("inspection_tid")
+        previous.append(_report_dict(rows[0]))
+        for row in rows[1:]:
+            (previous if row.get("inspection_tid") == first_tid else last).append(_report_dict(row))
+    return last, previous
+
+
+def _playdevice(db: Connection, row: Mapping[str, Any], inspection_type: str, with_defects: bool, with_inspections: bool) -> dict[str, Any]:
+    base_type = inspection_type[:-5] if inspection_type and len(inspection_type) > 5 else inspection_type
+    general: list[dict[str, Any]] = []
+    main: list[dict[str, Any]] = []
+    secondary: list[dict[str, Any]] = []
+    last: list[dict[str, Any]] = []
+    previous: list[dict[str, Any]] = []
+    if with_inspections:
+        general = _criteria(db, "wgr_v_sp_ger_insp_krit", "inspektionsart", row["fid"], base_type)
+        main = _criteria(db, "wgr_v_sp_hfall_insp_krit", "insektionsart", row["fid"], base_type)
+        secondary = _criteria(db, "wgr_v_sp_nfall_insp_krit", "insektionsart", row["fid"], base_type)
+        types = db.execute('SELECT short_value, value FROM "wgr_sp_inspektionsart_tbd"').fetchall()
+        last, previous = _inspection_history(db, row["fid"], [f"{x['value']} ({x['short_value']})" for x in types])
+    defects = None
+    if with_defects:
+        defects = [_defect_dict(db, item, False) for item in db.execute(
+            DEFECT_SELECT + " WHERE fid_spielgeraet=%s AND datum_erledigung IS NULL", (row["fid"],)
+        ).fetchall()]
+    return {
+        "type": "Feature",
+        "properties": {
+            "fid": row["fid"], "supplier": row.get("supplier") or "", "material": "", "lebensdauer": 0,
+            "comment": row.get("comment") or "",
+            "type": {"name": row.get("type_name") or "", "description": row.get("type_description") or "", "standard": row.get("standard") or ""},
+            "dateOfService": DOTNET_MIN_DATE, "constructionDate": row.get("construction_date") or DOTNET_MIN_DATE,
+            "generalInspectionCriteria": general, "mainFallProtectionInspectionCriteria": main,
+            "secondaryFallProtectionInspectionCriteria": secondary,
+            "recommendedYearOfRenovation": row.get("recommended_year") or 0,
+            "renovationType": row.get("renovation_type") or 0,
+            "commentRecommendedYearOfRenovation": row.get("renovation_comment") or "",
+            "notToBeChecked": bool(row.get("not_to_be_checked")), "cannotBeChecked": bool(row.get("cannot_be_checked")),
+            "cannotBeCheckedReason": row.get("cannot_be_checked_reason") or "", "defects": defects,
+            "lastInspectionReports": last, "nextToLastInspectionReports": previous,
+            "pictureBase64String": "", "mapImageBase64String": "",
+        },
+        "geometry": {"type": "Point", "coordinates": [row.get("x"), row.get("y")]},
+    }
+
+
+def _playground_result(db: Connection, row: Mapping[str, Any], inspection_type: str, with_defects: bool, with_inspections: bool) -> dict[str, Any]:
+    devices = [
+        _playdevice(db, item, inspection_type, with_defects, with_inspections)
+        for item in _playdevice_rows(db, row["id"])
+        if not item.get("not_to_be_checked")
+    ]
+    priorities = db.execute('SELECT id, short_value, value FROM "wgr_sp_dringlichkeit_tbd"').fetchall()
+    priority_options = []
+    for item in priorities:
+        short = (item.get("short_value") or "").strip()
+        long = (item.get("value") or "").strip()
+        final = short + (f" ({long})" if short and long else long)
+        if final:
+            priority_options.append(final)
+    type_rows = db.execute('SELECT short_value, value FROM "wgr_sp_inspektionsart_tbd"').fetchall()
+    type_options = [f"{item['value']} ({item['short_value']})" for item in type_rows]
+    renovations = [{"id": item["id"], "value": item["value"]} for item in db.execute(
+        'SELECT id, value FROM "wgr_sp_sanierungsart_tbd"'
+    ).fetchall()]
+    if settings.compatibility_bugs and renovations:
+        renovations = [dict(renovations[-1]) for _ in renovations]
+    bodies = [{"id": item["id"], "value": item["value"]} for item in db.execute(
+        'SELECT id, value FROM "wgr_sp_zust_mangelbeheb_tbd"'
+    ).fetchall()]
+    acceptance = [item["fid"] for item in db.execute(
+        'SELECT fid FROM "wgr_sp_abnahmen" WHERE fid_spielplatz=%s AND abnahmedokument IS NOT NULL', (row["id"],)
+    ).fetchall()]
+    certificates = [item["fid"] for item in db.execute(
+        'SELECT fid FROM "wgr_sp_zertifikat" WHERE fid_spielplatz=%s AND zertifikatsdokument IS NOT NULL', (row["id"],)
+    ).fetchall()]
+    return {
+        "id": row["id"], "name": row.get("name") or "", "address": row.get("address") or "",
+        "dateOfLastInspection": row.get("date_of_last_inspection") or DOTNET_MIN_DATE,
+        "suspendInspectionFrom": row.get("suspend_from"), "suspendInspectionTo": row.get("suspend_to"),
+        "inspectionSuspended": _suspended(row), "hasOpenDeviceDefects": False,
+        "playdevices": devices, "defectPriorityOptions": priority_options,
+        "inspectionTypeOptions": type_options, "renovationTypeOptions": renovations,
+        "defectsResponsibleBodyOptions": bodies, "chosenTypeOfInspection": "",
+        "documentsOfAcceptanceFids": acceptance, "certificateDocumentsFids": certificates,
+    }
+
+
+def get_playground_by_name(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    with connect() as db:
+        row = db.execute('''SELECT sp.fid AS id, sp.name,
+            sp.inspektion_aussetzen_von AS suspend_from,
+            sp.inspektion_aussetzen_bis AS suspend_to,
+            insp.datum_inspektion AS date_of_last_inspection, '' AS address
+            FROM "wgr_sp_spielplatz" sp
+            LEFT JOIN (SELECT fid_spielplatz, MAX(datum_inspektion) AS max_datum
+                       FROM "wgr_sp_inspektion" GROUP BY fid_spielplatz) insp_max
+              ON insp_max.fid_spielplatz=sp.fid
+            LEFT JOIN "wgr_sp_inspektion" insp
+              ON insp.fid_spielplatz=insp_max.fid_spielplatz AND insp.datum_inspektion=insp_max.max_datum
+            WHERE sp.name=%s LIMIT 1''', (request.query.get("name", ""),)).fetchone()
+        if not row:
+            raise LookupError("Sequence contains no elements")
+        inspection = request.query.get("inspectiontype", request.query.get("inspectionType", ""))
+        result = _playground_result(db, row, inspection, _bool(request.query.get("withdefects")), _bool(request.query.get("withinspections")))
+    return Response.json(result)
+
+
+def get_playground_by_id(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    if settings.compatibility_bugs:
+        return Response.text("Index was outside the bounds of the array.", 500)
+    with connect() as db:
+        row = db.execute('''SELECT fid AS id, name,
+            inspektion_aussetzen_von AS suspend_from, inspektion_aussetzen_bis AS suspend_to,
+            NULL::date AS date_of_last_inspection, '' AS address
+            FROM "wgr_sp_spielplatz" WHERE fid=%s''', (int(request.params["id"]),)).fetchone()
+        result = _playground_result(db, row, request.query.get("inspectiontype", ""),
+            _bool(request.query.get("withdefects")), _bool(request.query.get("withinspections"))) if row else None
+    return Response.json(result)
+
+
+def get_playground_by_device(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    fid = int(request.params["fid"])
+    if fid <= 0:
+        return Response.json({"id": 0, "name": "", "address": "", "playdevices": []})
+    with connect() as db:
+        row = db.execute('''SELECT sp.fid AS id, sp.name,
+            TRIM(CONCAT(COALESCE(sp.strassenname,''), ' ', COALESCE(sp.hausnummer,''))) AS address,
+            sp.inspektion_aussetzen_von AS suspend_from, sp.inspektion_aussetzen_bis AS suspend_to,
+            NULL::date AS date_of_last_inspection
+            FROM "gr_v_spielgeraete" geraet JOIN "wgr_sp_spielplatz" sp ON sp.fid=geraet.fid_spielplatz
+            WHERE geraet.fid=%s''', (fid,)).fetchone()
+        if not row:
+            return Response.json({"id": 0, "name": "", "address": "", "playdevices": []})
+        devices = [_playdevice(db, item, "", False, False) for item in _playdevice_rows(db, row["id"]) if item["fid"] == fid]
+    return Response.json({
+        "id": row["id"], "name": row.get("name") or "", "address": row.get("address") or "",
+        "dateOfLastInspection": DOTNET_MIN_DATE, "suspendInspectionFrom": None, "suspendInspectionTo": None,
+        "inspectionSuspended": False, "hasOpenDeviceDefects": False, "playdevices": devices,
+        "defectPriorityOptions": [], "inspectionTypeOptions": [], "renovationTypeOptions": [],
+        "defectsResponsibleBodyOptions": [], "chosenTypeOfInspection": "",
+        "documentsOfAcceptanceFids": [], "certificateDocumentsFids": [],
+    })
+
+
+def save_playdevice(request: Request) -> Response:
+    _, error = require_user(request)
+    if error:
+        return error
+    body = request.json()
+    props = (body or {}).get("properties", {})
+    if not props:
+        return Response.json({"errorMessage": "SPK-5"})
+    try:
+        with connect() as db:
+            db.execute('''UPDATE "gr_v_spielgeraete" SET
+                empfohlenes_sanierungsjahr=%s, id_sanierungsart=%s,
+                bemerkung_empf_sanierung=%s, nicht_pruefbar=%s,
+                grund_nicht_pruefbar=%s WHERE fid=%s''',
+                (props.get("recommendedYearOfRenovation") if int(props.get("recommendedYearOfRenovation") or 0) > 0 else None,
+                 props.get("renovationType") if int(props.get("renovationType") or 0) != 0 else None,
+                 props.get("commentRecommendedYearOfRenovation") or None, _bool(props.get("cannotBeChecked")),
+                 props.get("cannotBeCheckedReason") or "", int(props.get("fid") or 0)),
+            )
+        return Response.json({"errorMessage": ""})
+    except Exception:
+        return Response.json({"errorMessage": "SPK-3"})
+
+
+def get_defect(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    with connect() as db:
+        row = db.execute(DEFECT_SELECT + " WHERE tid=%s", (int(request.query.get("tid", "0")),)).fetchone()
+        result = _defect_dict(db, row) if row else None
+    return Response.json(result)
+
+
+def create_defect(request: Request) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    body = request.json() or {}
+    body.pop("done", None)
+    if not body.get("defectDescription"):
+        return Response.json(body)
+    try:
+        responsible = int(body.get("responsibleUserFid") or -1)
+        date_done = date.today() if body.get("dateDone") is not None else None
+        with connect() as db:
+            row = db.execute('''INSERT INTO "wgr_sp_insp_mangel"
+                (tid, fid_spielgeraet, datum, id_dringlichkeit, beschrieb, bemerkunng,
+                 datum_erledigung, fid_erledigung, id_zustaendig_behebung,
+                 fid_zustaendig_kontrolleur, auftrag_status, datum_auftrag_zugewiesen, bemerkung_auftrag)
+                VALUES ((SELECT CASE WHEN max(tid) IS NULL THEN 1 ELSE max(tid)+1 END FROM "wgr_sp_insp_mangel"),
+                 %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING tid''',
+                (body.get("playdeviceFid"), body.get("priority"), body.get("defectDescription") or "",
+                 body.get("defectComment") or "", date_done, user["fid"] if date_done else None,
+                 body.get("defectsResponsibleBodyId") if int(body.get("defectsResponsibleBodyId") or -1) > 0 else None,
+                 responsible if responsible > 0 else None, "zugewiesen" if responsible > 0 else None,
+                 datetime.now() if responsible > 0 else None, (body.get("assignmentComment") or "").strip() or None),
+            ).fetchone()
+        body["tid"] = row["tid"]
+        body.setdefault("errorMessage", "")
+    except Exception:
+        body["errorMessage"] = "SPK-3"
+    return Response.json(body)
+
+
+def update_defect(request: Request) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    body = request.json() or {}
+    if not body:
+        return Response.json({"errorMessage": "SPK-4"})
+    try:
+        responsible = int(body.get("responsibleUserFid") or -1)
+        date_done = _date_value(body.get("dateDone"))
+        with connect() as db:
+            db.execute('''UPDATE "wgr_sp_insp_mangel" SET
+                id_dringlichkeit=%s, beschrieb=%s, bemerkunng=%s, datum_erledigung=%s,
+                id_zustaendig_behebung=%s, fid_zustaendig_kontrolleur=%s,
+                auftrag_status=%s, datum_auftrag_zugewiesen=%s, bemerkung_auftrag=%s,
+                infomail_gesendet_am=CASE WHEN fid_zustaendig_kontrolleur IS DISTINCT FROM %s THEN NULL ELSE infomail_gesendet_am END,
+                infomail_empfaenger=CASE WHEN fid_zustaendig_kontrolleur IS DISTINCT FROM %s THEN NULL ELSE infomail_empfaenger END,
+                fid_erledigung=%s WHERE tid=%s''',
+                (body.get("priority"), body.get("defectDescription") or "", body.get("defectComment") or "", date_done,
+                 body.get("defectsResponsibleBodyId") if int(body.get("defectsResponsibleBodyId") or -1) > 0 else None,
+                 responsible if responsible > 0 else None,
+                 (body.get("assignmentStatus") or "zugewiesen") if responsible > 0 else None,
+                 _date_value(body.get("dateAssignmentCreated")) or datetime.now() if responsible > 0 else None,
+                 (body.get("assignmentComment") or "").strip() or None,
+                 responsible if responsible > 0 else None, responsible if responsible > 0 else None,
+                 user["fid"] if date_done else None, body.get("tid")),
+            )
+        return Response.json({"errorMessage": ""})
+    except Exception:
+        return Response.json({"errorMessage": "SPK-3"})
+
+
+def assignment_status(request: Request, accepted: bool) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    body = request.json() or {}
+    comment = (body.get("assignmentComment") or "").strip() or None
+    with connect() as db:
+        if accepted:
+            cursor = db.execute('''UPDATE "wgr_sp_insp_mangel" SET auftrag_status='angenommen',
+                datum_auftrag_angenommen=CURRENT_TIMESTAMP, datum_auftrag_abgelehnt=NULL,
+                bemerkung_auftrag=%s WHERE tid=%s AND fid_zustaendig_kontrolleur=%s''',
+                (comment, int(request.params["tid"]), user["fid"]),
+            )
+        else:
+            cursor = db.execute('''UPDATE "wgr_sp_insp_mangel" SET auftrag_status='abgelehnt',
+                datum_auftrag_abgelehnt=CURRENT_TIMESTAMP, bemerkung_auftrag=%s
+                WHERE tid=%s AND fid_zustaendig_kontrolleur=%s''',
+                (comment, int(request.params["tid"]), user["fid"]),
+            )
+    return Response.json({"errorMessage": "" if cursor.rowcount == 1 else "SPK-3"})
+
+
+def mark_info_mail(request: Request) -> Response:
+    _, error = require_user(request)
+    if error:
+        return error
+    tid = int(request.params["tid"])
+    with connect() as db:
+        cursor = db.execute('''UPDATE "wgr_sp_insp_mangel" mangel
+            SET infomail_gesendet_am=CURRENT_TIMESTAMP,
+                infomail_empfaenger=TRIM(CONCAT(kontrolleur.vorname, ' ', kontrolleur.nachname))
+            FROM "wgr_sp_kontrolleur" kontrolleur
+            WHERE mangel.tid=%s AND kontrolleur.fid=mangel.fid_zustaendig_kontrolleur''', (tid,))
+        if cursor.rowcount != 1:
+            return Response.text("Die Infomail konnte nicht protokolliert werden.", 400)
+        row = db.execute(DEFECT_SELECT + " WHERE tid=%s", (tid,)).fetchone()
+        result = _defect_dict(db, row) if row else None
+    return Response.json(result)
+
+
+def _decode_image(value: bytes | str | None) -> tuple[bytes | None, str | None]:
+    if value is None:
+        return None, None
+    raw = value if isinstance(value, bytes) else value.encode()
+    printable = bool(raw) and all(32 <= byte <= 126 or byte in (9, 10, 13) for byte in raw[:128])
+    if printable:
+        text = raw.decode("utf-8", "replace").strip()
+        if len(text) >= 16 and len(text) % 2 == 0 and all(char in "0123456789abcdefABCDEF" for char in text):
+            try:
+                text = bytes.fromhex(text).decode("utf-8").strip()
+            except Exception:
+                pass
+        mime = None
+        if text.lower().startswith("data:") and "," in text:
+            meta, text = text.split(",", 1)
+            mime = meta[5:].split(";", 1)[0]
+        try:
+            raw = base64.b64decode(text.replace(" ", "+") + "=" * (-len(text) % 4), validate=False)
+        except (ValueError, binascii.Error):
+            return None, None
+        return raw, mime or _mime(raw)
+    return raw, _mime(raw)
+
+
+def _mime(raw: bytes) -> str:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return "application/octet-stream"
+
+
+def get_playdevice_picture(request: Request) -> Response:
+    if _bool(request.query.get("dryRun")):
+        return Response(b"", 200, "application/json; charset=utf-8")
+    with connect() as db:
+        row = db.execute('SELECT picture_base64 AS picture FROM "gr_v_spielgeraete" WHERE fid=%s',
+                         (int(request.params["fid"]),)).fetchone()
+    if not row or row["picture"] is None:
+        return Response.text("Kein Bild vorhanden.", 404)
+    data, mime = _decode_image(row["picture"])
+    return Response.file(data, mime) if data else Response.text("Kein Bild vorhanden.", 404)
+
+
+def exchange_playdevice_picture(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    fid = int(request.query.get("fid") or 0)
+    if fid < 1:
+        return Response.json({"errorMessage": "SPK-7"})
+    body = request.json() or {}
+    data = body.get("data") if "data" in body else body.get("Data")
+    data = data.strip() if isinstance(data, str) else data
+    if not data:
+        return Response.json({"errorMessage": "SPK-6"})
+    if not _bool(request.query.get("dryRun")):
+        with connect() as db:
+            db.execute('UPDATE "gr_v_spielgeraete" SET picture_base64=%s WHERE fid=%s',
+                       (str(data).encode("ascii", "replace"), fid))
+    return Response.json({"errorMessage": ""})
+
+
+def put_playdevice_picture(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    if _bool(request.query.get("dryRun")):
+        return Response(b"", 200, "application/json; charset=utf-8")
+    body = request.json() or {}
+    data = body.get("data") if "data" in body else body.get("Data")
+    with connect() as db:
+        db.execute('UPDATE "gr_v_spielgeraete" SET picture_base64=%s WHERE fid=%s',
+                   (data, int(request.params["fid"])))
+    return Response(b"", 200, "application/json; charset=utf-8")
+
+
+def get_defect_picture(request: Request) -> Response:
+    if _bool(request.query.get("dryRun")):
+        return Response(b"", 200, "application/json; charset=utf-8")
+    column = "picture_base64_thumb" if _bool(request.query.get("thumb")) else "picture_base64"
+    with connect() as db:
+        row = db.execute(f'SELECT {column} AS value FROM "wgr_sp_insp_mangel_foto" WHERE tid=%s',
+                         (int(request.params["tid"]),)).fetchone()
+    if not row or row["value"] is None:
+        return Response.text("Kein Bild vorhanden.", 404)
+    data, mime = _decode_image(row["value"])
+    return Response.file(data, mime) if data else Response.text("Kein Bild vorhanden.", 404)
+
+
+def put_defect_picture(request: Request) -> Response:
+    # Preserved: anonymous endpoint and missing return after the dry-run Ok().
+    body = request.json() or {}
+    with connect() as db:
+        row = db.execute('''INSERT INTO "wgr_sp_insp_mangel_foto"
+            (tid, tid_maengel, picture_base64, picture_base64_thumb, zeitpunkt)
+            VALUES ((SELECT COALESCE(MAX(tid),0)+1 FROM "wgr_sp_insp_mangel_foto"), %s, %s, %s, %s)
+            RETURNING tid''',
+            (int(request.params["tid"]), body.get("base64StringPicture") or "",
+             body.get("base64StringPictureThumb") or "", _bool(body.get("afterFixing"))),
+        ).fetchone()
+    return Response.json({"tid": row["tid"]}) if row else Response(b"", 400)
+
+
+def post_inspections(request: Request) -> Response:
+    user = current_user(request, dry_run=_bool(request.query.get("dryRun")))
+    if not user:
+        return Response.text("Unauthorized", 401)
+    reports = request.json()
+    if not isinstance(reports, list) or not reports:
+        return Response.json({"errorMessage": "SPK-0"})
+    inspection_type = reports[0].get("inspectionType") or ""
+    if not inspection_type or any(report.get("inspectionType") != inspection_type for report in reports):
+        return Response.json({"errorMessage": "SPK-6"})
+    base_type = inspection_type[:-5] if len(inspection_type) > 4 else inspection_type
+    service_date = date.today()
+    try:
+        with connect() as db:
+            inspector = db.execute('SELECT fid FROM "wgr_sp_kontrolleur" WHERE e_mail=%s',
+                                   (user["mailAddress"],)).fetchone()
+            type_row = db.execute('SELECT id FROM "wgr_sp_inspektionsart_tbd" WHERE value=%s',
+                                  (base_type,)).fetchone()
+            first_fid = int(reports[0].get("playdeviceFid") or 0)
+            playground = db.execute('SELECT fid_spielplatz FROM "gr_v_spielgeraete" WHERE fid=%s',
+                                    (first_fid,)).fetchone()
+            inspector_fid = inspector["fid"] if inspector else None
+            type_id = type_row["id"] if type_row else None
+            playground_fid = playground["fid_spielplatz"] if playground else None
+            target = None
+            target_column = {1: "dat_naech_visu_insp", 2: "dat_naech_oper_insp", 3: "dat_naech_haupt_insp"}.get(type_id)
+            if target_column and playground_fid:
+                target_row = db.execute(
+                    f'SELECT ({target_column})::date AS target FROM "wgr_sp_spielplatz" WHERE fid=%s',
+                    (playground_fid,),
+                ).fetchone()
+                target = target_row["target"] if target_row else None
+            inserted = db.execute('''INSERT INTO "wgr_sp_inspektion"
+                (tid, id_inspektionsart, fid_spielplatz, datum_inspektion, fid_kontrolleur, datum_soll_inspektion)
+                VALUES ((SELECT CASE WHEN max(tid) IS NULL THEN 1 ELSE max(tid)+1 END FROM "wgr_sp_inspektion"),
+                        %s, %s, %s, %s, %s) RETURNING tid''',
+                (type_id, playground_fid, service_date, inspector_fid, target),
+            ).fetchone()
+            inspection_tid = inserted["tid"]
+            for report in reports:
+                fid = int(report.get("playdeviceFid") or 0)
+                if not fid:
+                    raise ValueError("Missing playdevice fid")
+                device = db.execute(
+                    'SELECT nicht_zu_pruefen, nicht_pruefbar FROM "gr_v_spielgeraete" WHERE fid=%s', (fid,)
+                ).fetchone()
+                if not device or device.get("nicht_zu_pruefen") or device.get("nicht_pruefbar"):
+                    continue
+                db.execute('''INSERT INTO "wgr_sp_insp_bericht"
+                    (tid, tid_inspektion, fid_spielgeraet, fid_geraet_detail, inspektionsart,
+                     datum_inspektion, kontrolleur, pruefung_text, pruefung_erledigt,
+                     pruefung_kommentar, wartung_text, wartung_erledigung, wartung_kommentar, fallschutz)
+                    VALUES ((SELECT CASE WHEN max(tid) IS NULL THEN 1 ELSE max(tid)+1 END FROM "wgr_sp_insp_bericht"),
+                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                    (inspection_tid, fid, report.get("playdeviceDetailFid") or None, inspection_type, service_date,
+                     f"{user['firstName']} {user['lastName']}", report.get("inspectionText") or "",
+                     1 if _bool(report.get("inspectionDone")) else 0, report.get("inspectionComment") or "",
+                     report.get("maintenanceText") or "", 1 if _bool(report.get("maintenanceDone")) else 0,
+                     report.get("maintenanceComment") or "", report.get("fallProtectionType") or ""),
+                )
+        return Response.json({"errorMessage": ""})
+    except Exception:
+        return Response.json({"errorMessage": "SPK-3"})
+
+
+def get_document(request: Request) -> Response:
+    _, error = require_token(request)
+    if error:
+        return error
+    kind = request.query.get("type", "").strip().lower()
+    if kind not in {"abnahme", "zertifikat"}:
+        return Response(b"", 400)
+    table, column = ("wgr_sp_abnahmen", "abnahmedokument") if kind == "abnahme" else ("wgr_sp_zertifikat", "zertifikatsdokument")
+    try:
+        with connect() as db:
+            row = db.execute(f'SELECT {column} AS content FROM "{table}" WHERE fid=%s',
+                             (int(request.params["fid"]),)).fetchone()
+        return Response.file(row["content"], "application/pdf") if row else Response(b"", 400)
+    except Exception:
+        return Response(b"", 400)
+
+
+def push_register(request: Request) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    body = request.json() or {}
+    try:
+        endpoint = body["endpoint"].strip()
+        p256dh = body["p256dh"].strip()
+        auth = body["auth"].strip()
+        if not endpoint or not p256dh or not auth:
+            raise ValueError("Incomplete subscription")
+        with connect() as db:
+            db.execute('''INSERT INTO "wgr_sp_push_subscription"
+                (fid_kontrolleur, endpoint, p256dh, auth, user_agent, aktiv,
+                 datum_registrierung, datum_letzte_verwendung, datum_deaktivierung)
+                VALUES (%s, %s, %s, %s, %s, true, CURRENT_TIMESTAMP, NULL, NULL)
+                ON CONFLICT (endpoint) DO UPDATE SET
+                 fid_kontrolleur=EXCLUDED.fid_kontrolleur, p256dh=EXCLUDED.p256dh,
+                 auth=EXCLUDED.auth, user_agent=EXCLUDED.user_agent, aktiv=true,
+                 datum_letzte_verwendung=CURRENT_TIMESTAMP, datum_deaktivierung=NULL''',
+                (user["fid"], endpoint, p256dh, auth, (body.get("userAgent") or request.headers.get("User-Agent", "")).strip() or None),
+            )
+        return Response.json({"errorMessage": ""})
+    except Exception:
+        return Response.json({"errorMessage": "SPK-3"})
+
+
+def push_unregister(request: Request) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    body = request.json() or {}
+    try:
+        endpoint = (body.get("endpoint") or "").strip()
+        if not endpoint:
+            raise ValueError("Missing endpoint")
+        with connect() as db:
+            db.execute('''UPDATE "wgr_sp_push_subscription"
+                SET aktiv=false, datum_deaktivierung=CURRENT_TIMESTAMP
+                WHERE fid_kontrolleur=%s AND endpoint=%s''', (user["fid"], endpoint))
+        return Response.json({"errorMessage": ""})
+    except Exception:
+        return Response.json({"errorMessage": "SPK-3"})
+
+
+def push_me(request: Request) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    with connect() as db:
+        rows = db.execute('''SELECT endpoint, p256dh, auth, COALESCE(user_agent,'') AS user_agent
+            FROM "wgr_sp_push_subscription" WHERE fid_kontrolleur=%s AND aktiv=true''', (user["fid"],)).fetchall()
+    return Response.json([{
+        "endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"], "userAgent": row["user_agent"]
+    } for row in rows])
