@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import mimetypes
 import os
 import time
+import traceback
 from pathlib import Path
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
@@ -95,7 +97,7 @@ class Application:
                 response = Response.text(str(exc), 400)
             except Exception as exc:
                 LOG.exception("Request failed: %s %s", request.method, request.path)
-                response = Response.text(str(exc), 500)
+                response = self._exception_response(exc)
         headers = [("Content-Type", response.content_type), ("Content-Length", str(len(response.body))),
                    ("Access-Control-Allow-Origin", "*"), ("X-Content-Type-Options", "nosniff")]
         headers.extend(response.headers)
@@ -112,6 +114,26 @@ class Application:
             ]},
         )
         return [response.body]
+
+    @staticmethod
+    def _exception_response(exc: Exception) -> Response:
+        # The legacy ASP.NET service enables DeveloperExceptionPage only in DEV.
+        # Outside Development, Kestrel/framework handling returns a bare 500 and
+        # does not expose the exception message to the client.
+        environment = os.getenv("ASPNETCORE_ENVIRONMENT", "Production")
+        if environment.casefold() != "development":
+            return Response(b"", 500, "text/plain; charset=utf-8")
+
+        details = traceback.format_exc()
+        body = (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            "<title>Unhandled exception</title></head><body>"
+            "<h1>An unhandled exception occurred while processing the request.</h1>"
+            f"<h2>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</h2>"
+            f"<pre>{html.escape(details)}</pre>"
+            "</body></html>"
+        )
+        return Response.text(body, 500, "text/html; charset=utf-8")
 
     def _path_base_request(self, request: Request) -> Request | None:
         base_path = settings.base_path

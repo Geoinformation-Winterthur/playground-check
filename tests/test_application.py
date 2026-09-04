@@ -221,6 +221,23 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body, b"Ein kritischer Fehler ist aufgetreten. Bitte kontaktieren Sie den Administrator.")
 
+    def test_unhandled_exception_is_hidden_outside_development(self):
+        with patch.object(self.app.router, "dispatch", side_effect=RuntimeError("sensitive database detail")):
+            with patch.dict(os.environ, {"ASPNETCORE_ENVIRONMENT": "Production"}, clear=False):
+                status, body, captured = self.request("GET", "/api/health")
+        self.assertEqual(status, 500)
+        self.assertEqual(body, b"")
+        self.assertEqual(captured["headers"].get("Content-Type"), "text/plain; charset=utf-8")
+
+    def test_unhandled_exception_is_detailed_in_development(self):
+        with patch.object(self.app.router, "dispatch", side_effect=RuntimeError("development detail")):
+            with patch.dict(os.environ, {"ASPNETCORE_ENVIRONMENT": "Development"}, clear=False):
+                status, body, captured = self.request("GET", "/api/health")
+        self.assertEqual(status, 500)
+        self.assertEqual(captured["headers"].get("Content-Type"), "text/html; charset=utf-8")
+        self.assertIn(b"RuntimeError", body)
+        self.assertIn(b"development detail", body)
+
     def test_image_decoder_accepts_raw_and_data_url_images(self):
         png = b"\x89PNG\r\n\x1a\ncontent"
         self.assertEqual(service._decode_image(png), (png, "image/png"))
