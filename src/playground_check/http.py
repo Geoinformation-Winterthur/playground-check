@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+from decimal import Decimal
 import re
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -68,7 +69,9 @@ class Response:
         return cls(value, 200, content_type, headers)
 
 
-def _json_default(value: Any) -> str:
+def _json_default(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
     if hasattr(value, "isoformat"):
         return value.isoformat()
     raise TypeError(type(value).__name__)

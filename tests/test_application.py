@@ -5,12 +5,14 @@ import json
 import os
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
 from playground_check import service
 from playground_check.auth import decode_token, issue_token
 from playground_check.config import _npgsql_to_libpq, load_environment
+from playground_check.http import Response
 from playground_check.server import Application
 
 
@@ -83,6 +85,10 @@ class ApplicationTest(unittest.TestCase):
             status, result, _ = self.request("GET", "/collections/playgrounds/items/")
         self.assertEqual(status, 200)
         self.assertEqual(result[0]["errorMessage"], "Unknown critical error.")
+
+    def test_json_response_serializes_postgresql_decimals_as_numbers(self):
+        response = Response.json({"integer": Decimal("27"), "fraction": Decimal("12.5")})
+        self.assertEqual(json.loads(response.body), {"integer": 27, "fraction": 12.5})
 
     def test_image_decoder_accepts_raw_and_data_url_images(self):
         png = b"\x89PNG\r\n\x1a\ncontent"
