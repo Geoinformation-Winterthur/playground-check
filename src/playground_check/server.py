@@ -12,7 +12,7 @@ from wsgiref.simple_server import WSGIRequestHandler, make_server
 from . import __version__
 from .config import settings
 from .db import check_connection
-from .http import Request, Response, Router, status_line
+from .http import JsonBodyError, Request, Response, Router, status_line
 from .openapi import build_openapi_document, swagger_ui_html
 from .logging_ext import configure_logging
 from . import service
@@ -84,6 +84,13 @@ class Application:
                         response.headers.append(("Allow", ", ".join(allowed_methods)))
                     else:
                         response = self._frontend(request)
+            except JsonBodyError as exc:
+                response = Response.json({
+                    "type": "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+                    "title": "One or more validation errors occurred.",
+                    "status": 400,
+                    "errors": {"$": [str(exc)]},
+                }, 400)
             except ValueError as exc:
                 response = Response.text(str(exc), 400)
             except Exception as exc:

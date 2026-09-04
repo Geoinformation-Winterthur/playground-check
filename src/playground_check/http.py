@@ -10,6 +10,50 @@ from typing import Any, Callable, Iterable
 from urllib.parse import parse_qs
 
 
+class JsonBodyError(ValueError):
+    """Raised when the request body cannot be bound from JSON."""
+
+
+class CaseInsensitiveJsonObject(dict[str, Any]):
+    """Dictionary with ASP.NET/System.Text.Json-like case-insensitive property lookup."""
+
+    def _matching_key(self, key: object) -> object:
+        if not isinstance(key, str):
+            return key
+        lowered = key.casefold()
+        for existing in self.keys():
+            if isinstance(existing, str) and existing.casefold() == lowered:
+                return existing
+        return key
+
+    def __getitem__(self, key: object) -> Any:
+        return super().__getitem__(self._matching_key(key))
+
+    def __contains__(self, key: object) -> bool:
+        return super().__contains__(self._matching_key(key))
+
+    def get(self, key: object, default: Any = None) -> Any:
+        return super().get(self._matching_key(key), default)
+
+    def pop(self, key: object, default: Any = None) -> Any:
+        matching = self._matching_key(key)
+        if super().__contains__(matching):
+            return super().pop(matching)
+        return default
+
+
+def _case_insensitive_object(pairs: list[tuple[str, Any]]) -> CaseInsensitiveJsonObject:
+    result = CaseInsensitiveJsonObject()
+    for key, value in pairs:
+        # System.Text.Json web defaults bind property names case-insensitively. If the
+        # same logical property occurs more than once, keep the last value.
+        existing = result._matching_key(key)
+        if existing in result:
+            dict.__delitem__(result, existing)
+        dict.__setitem__(result, key, value)
+    return result
+
+
 @dataclass
 class Request:
     environ: dict[str, Any]
@@ -43,9 +87,13 @@ class Request:
         try:
             size = int(self.environ.get("CONTENT_LENGTH") or 0)
             data = self.environ["wsgi.input"].read(size) if size else b""
-            return json.loads(data.decode("utf-8")) if data else None
-        except Exception as exc:
-            raise ValueError("Invalid JSON body") from exc
+            if not data:
+                return None
+            return json.loads(data.decode("utf-8"), object_pairs_hook=_case_insensitive_object)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise JsonBodyError("The JSON value could not be converted.") from exc
+        except (TypeError, ValueError) as exc:
+            raise JsonBodyError("The request body is not valid JSON.") from exc
 
 
 @dataclass

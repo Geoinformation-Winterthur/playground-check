@@ -189,6 +189,38 @@ class ApplicationTest(unittest.TestCase):
         response = Response.json({"integer": Decimal("27"), "fraction": Decimal("12.5")})
         self.assertEqual(json.loads(response.body), {"integer": 27, "fraction": 12.5})
 
+    def test_invalid_json_body_returns_api_controller_style_400(self):
+        data = b'{"mailAddress":'
+        environ = {
+            "REQUEST_METHOD": "POST", "PATH_INFO": "/account/login", "QUERY_STRING": "",
+            "CONTENT_LENGTH": str(len(data)), "CONTENT_TYPE": "application/json",
+            "wsgi.input": io.BytesIO(data), "SERVER_NAME": "test", "SERVER_PORT": "80",
+            "wsgi.url_scheme": "http",
+        }
+        captured = {}
+
+        def start(status, headers):
+            captured.update(status=status, headers=dict(headers))
+
+        payload = b"".join(self.app(environ, start))
+        result = json.loads(payload)
+        self.assertEqual(int(captured["status"].split()[0]), 400)
+        self.assertEqual(result["status"], 400)
+        self.assertIn("$", result["errors"])
+
+    def test_json_property_names_bind_case_insensitively_like_aspnet(self):
+        with patch.object(service, "connect", side_effect=RuntimeError("database unavailable")):
+            status, body, _ = self.request("POST", "/account/login", {
+                "MAILADDRESS": "test@winterthur.ch",
+                "PASSPHRASE": "abcdefgh",
+                "LASTNAME": "Test",
+                "FIRSTNAME": "User",
+            })
+        # The body reached the normal login/database branch. Before the binding
+        # compatibility fix the differently-cased property names were rejected early.
+        self.assertEqual(status, 400)
+        self.assertEqual(body, b"Ein kritischer Fehler ist aufgetreten. Bitte kontaktieren Sie den Administrator.")
+
     def test_image_decoder_accepts_raw_and_data_url_images(self):
         png = b"\x89PNG\r\n\x1a\ncontent"
         self.assertEqual(service._decode_image(png), (png, "image/png"))
