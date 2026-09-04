@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: playground-check-python:2026.7.1
+    image: playground-check-python:2026.7.2
     restart: unless-stopped
     init: true
     ports:
