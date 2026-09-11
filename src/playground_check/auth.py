@@ -41,7 +41,7 @@ def issue_token(user: dict[str, Any]) -> str:
         "iss": settings.token_issuer,
         "aud": settings.token_issuer,
         "nbf": int(now.timestamp()),
-        "exp": int((now + timedelta(days=2)).timestamp()),
+        "exp": int((now + timedelta(hours=8)).timestamp()),
     }
     header = {"alg": "HS256", "typ": "JWT"}
     unsigned = f"{_b64url(json.dumps(header, separators=(',', ':')).encode())}.{_b64url(json.dumps(payload, separators=(',', ':')).encode())}"
