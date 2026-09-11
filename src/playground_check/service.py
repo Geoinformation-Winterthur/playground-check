@@ -187,7 +187,7 @@ def login(request: Request) -> Response:
 
 
 def get_users(request: Request) -> Response:
-    _, error = require_token(request, "administrator")
+    _, error = require_user(request, "administrator")
     if error:
         return error
     email = request.query.get("email", "").strip().lower()
@@ -202,7 +202,7 @@ def get_users(request: Request) -> Response:
 
 
 def get_assignable_users(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     with connect() as db:
@@ -211,7 +211,7 @@ def get_assignable_users(request: Request) -> Response:
 
 
 def update_user(request: Request) -> Response:
-    _, error = require_token(request, "administrator")
+    _, error = require_user(request, "administrator")
     if error:
         return error
     body = request.json()
@@ -265,7 +265,7 @@ def update_user(request: Request) -> Response:
 
 
 def delete_user(request: Request) -> Response:
-    _, error = require_token(request, "administrator")
+    _, error = require_user(request, "administrator")
     if error:
         return error
     email = request.query.get("email", "").strip().lower()
@@ -286,7 +286,7 @@ def delete_user(request: Request) -> Response:
 
 
 def inspection_types(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     with connect() as db:
@@ -295,7 +295,7 @@ def inspection_types(request: Request) -> Response:
 
 
 def renovation_types(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     with connect() as db:
@@ -319,7 +319,7 @@ def _suspended(row: Mapping[str, Any]) -> bool:
 
 
 def only_names(request: Request) -> Response:
-    user, error = require_token(request)
+    user, error = require_user(request)
     if error:
         return error
     inspection_type = request.query.get("inspectiontype", request.query.get("inspectionType", ""))
@@ -638,7 +638,7 @@ def _playground_result(db: Connection, row: Mapping[str, Any], inspection_type: 
 
 
 def get_playground_by_name(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     with connect() as db:
@@ -661,7 +661,7 @@ def get_playground_by_name(request: Request) -> Response:
 
 
 def invalid_playground_id(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     invalid_id = request.params.get("invalid_id", "")
@@ -674,7 +674,7 @@ def invalid_playground_id(request: Request) -> Response:
 
 
 def get_playground_by_id(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     if settings.compatibility_bugs:
@@ -690,7 +690,7 @@ def get_playground_by_id(request: Request) -> Response:
 
 
 def get_playground_by_device(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     fid = int(request.params["fid"])
@@ -741,7 +741,7 @@ def save_playdevice(request: Request) -> Response:
 
 
 def get_defect(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     with connect() as db:
@@ -920,7 +920,7 @@ def get_playdevice_picture(request: Request) -> Response:
 
 
 def exchange_playdevice_picture(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     fid = int(request.query.get("fid") or 0)
@@ -939,7 +939,7 @@ def exchange_playdevice_picture(request: Request) -> Response:
 
 
 def put_playdevice_picture(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     if _bool(request.query.get("dryRun")):
@@ -1049,7 +1049,7 @@ def post_inspections(request: Request) -> Response:
 
 
 def get_document(request: Request) -> Response:
-    _, error = require_token(request)
+    _, error = require_user(request)
     if error:
         return error
     kind = request.query.get("type", "").strip().lower()
