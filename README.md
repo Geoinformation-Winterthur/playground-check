@@ -319,3 +319,7 @@ playground-check-python/
 ├── start.sh
 └── README.md
 ```
+
+## Disclaimer
+
+Mit KI-Unterstützung entwickelt
