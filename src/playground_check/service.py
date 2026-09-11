@@ -564,7 +564,11 @@ def _playdevice_rows(db: Connection, playground_id: int) -> list[Mapping[str, An
         spg.nicht_zu_pruefen AS not_to_be_checked,
         spg.nicht_pruefbar AS cannot_be_checked,
         spg.grund_nicht_pruefbar AS cannot_be_checked_reason,
-        spg.bau_dat AS construction_date, spg.id_sanierungsart AS renovation_type
+        spg.bau_dat AS construction_date, spg.id_sanierungsart AS renovation_type,
+        EXISTS (
+            SELECT 1 FROM "wgr_sp_insp_mangel" mangel
+            WHERE mangel.fid_spielgeraet=spg.fid AND mangel.fid_erledigung IS NULL
+        ) AS has_open_defects
         FROM "gr_v_spielgeraete" spg
         LEFT JOIN "wgr_sp_spielgeraeteart_tbd" gart ON spg.id_geraeteart=gart.id
         LEFT JOIN "wgr_sp_lieferant" lief ON spg.id_lieferant=lief.fid
@@ -640,7 +644,8 @@ def _playdevice(db: Connection, row: Mapping[str, Any], inspection_type: str, wi
             "renovationType": row.get("renovation_type") or 0,
             "commentRecommendedYearOfRenovation": row.get("renovation_comment") or "",
             "notToBeChecked": bool(row.get("not_to_be_checked")), "cannotBeChecked": bool(row.get("cannot_be_checked")),
-            "cannotBeCheckedReason": row.get("cannot_be_checked_reason") or "", "defects": defects,
+            "cannotBeCheckedReason": row.get("cannot_be_checked_reason") or "",
+            "hasOpenDefects": bool(row.get("has_open_defects")), "defects": defects,
             "lastInspectionReports": last, "nextToLastInspectionReports": previous,
             "pictureBase64String": "", "mapImageBase64String": "",
         },
