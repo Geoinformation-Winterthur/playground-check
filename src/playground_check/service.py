@@ -4,7 +4,6 @@ import base64
 import binascii
 from datetime import date, datetime
 from email.headerregistry import Address
-from time import sleep
 from typing import Any, Mapping
 from urllib.error import HTTPError
 from urllib.request import urlopen
@@ -160,7 +159,9 @@ def login(request: Request) -> Response:
                 if row.get("last_login_attempt") is not None:
                     elapsed = (row["database_time"] - row["last_login_attempt"]).total_seconds()
                     if elapsed < 3:
-                        sleep(3)
+                        response = Response.text("Zu viele Login-Versuche. Bitte versuchen Sie es in Kürze erneut.", 429)
+                        response.headers.append(("Retry-After", str(max(1, 3 - int(elapsed)))))
+                        return response
                 db.execute(
                     "UPDATE \"wgr_sp_kontrolleur\" SET letzter_anmeldeversuch=CURRENT_TIMESTAMP "
                     "WHERE trim(lower(e_mail))=%s", (email,),
