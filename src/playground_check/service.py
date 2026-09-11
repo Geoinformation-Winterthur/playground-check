@@ -798,6 +798,53 @@ def save_playdevice(request: Request) -> Response:
         return Response.json({"errorMessage": "SPK-3"})
 
 
+def get_defect_overview(request: Request) -> Response:
+    _, error = require_user(request)
+    if error:
+        return error
+    with connect() as db:
+        rows = db.execute('''SELECT
+            mangel.tid, mangel.fid_spielgeraet AS playdevice_fid,
+            spielplatz.name AS playground_name,
+            COALESCE(geraeteart.value, geraeteart.short_value, '') AS playdevice_type,
+            geraet.norm AS standard,
+            mangel.id_dringlichkeit AS priority,
+            mangel.beschrieb AS description,
+            mangel.bemerkunng AS comment,
+            mangel.datum AS date_creation,
+            mangel.datum_erledigung AS date_done,
+            mangel.fid_erledigung AS done_by,
+            mangel.id_zustaendig_behebung AS responsible_body_id,
+            mangel.fid_zustaendig_kontrolleur AS responsible_user_fid,
+            TRIM(CONCAT(COALESCE(kontrolleur.vorname, ''), ' ', COALESCE(kontrolleur.nachname, ''))) AS responsible_user_name
+            FROM "wgr_sp_insp_mangel" mangel
+            LEFT JOIN "gr_v_spielgeraete" geraet ON geraet.fid=mangel.fid_spielgeraet
+            LEFT JOIN "wgr_sp_spielplatz" spielplatz ON spielplatz.fid=geraet.fid_spielplatz
+            LEFT JOIN "wgr_sp_spielgeraeteart_tbd" geraeteart ON geraeteart.id=geraet.id_geraeteart
+            LEFT JOIN "wgr_sp_kontrolleur" kontrolleur ON kontrolleur.fid=mangel.fid_zustaendig_kontrolleur
+            ORDER BY (mangel.fid_erledigung IS NOT NULL), mangel.datum, spielplatz.name, geraeteart.value
+        ''').fetchall()
+    result = []
+    for row in rows:
+        result.append({
+            "tid": row["tid"],
+            "playdeviceFid": row.get("playdevice_fid") or 0,
+            "playgroundName": row.get("playground_name") or "",
+            "playdeviceType": row.get("playdevice_type") or "",
+            "standard": row.get("standard") or "",
+            "priority": row.get("priority") if row.get("priority") is not None else -1,
+            "defectDescription": row.get("description") or "",
+            "defectComment": row.get("comment") or "",
+            "dateCreation": row.get("date_creation"),
+            "dateDone": row.get("date_done"),
+            "done": row.get("done_by") is not None,
+            "defectsResponsibleBodyId": row.get("responsible_body_id") or -1,
+            "responsibleUserFid": row.get("responsible_user_fid") or -1,
+            "responsibleUserName": row.get("responsible_user_name") or "",
+        })
+    return Response.json(result)
+
+
 def get_defect(request: Request) -> Response:
     _, error = require_user(request)
     if error:

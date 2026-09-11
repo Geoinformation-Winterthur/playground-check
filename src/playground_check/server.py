@@ -52,6 +52,7 @@ def create_router() -> Router:
     router.add("PUT", r"/Playdevice/?", service.exchange_playdevice_picture)
     router.add("GET", r"/Playdevice/(?P<fid>\d+)/Picture/?", service.get_playdevice_picture)
     router.add("PUT", r"/Playdevice/(?P<fid>\d+)/Picture/?", service.put_playdevice_picture)
+    router.add("GET", r"/Defect/Overview/?", service.get_defect_overview)
     router.add("GET", r"/Defect/?", service.get_defect)
     router.add("POST", r"/Defect/?", service.update_defect)
     router.add("PUT", r"/Defect/?", service.create_defect)
