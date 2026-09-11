@@ -1,4 +1,4 @@
-# Spielplatzkontrolle – Python-Monorepo
+# Spielplatzkontrolle
 
 Python-Neuimplementierung der bereitgestellten Projekte
 `playground-check-client` (Angular) und `playground-check-service` (ASP.NET Core).
