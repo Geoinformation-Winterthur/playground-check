@@ -2,8 +2,8 @@
   'use strict';
 
   const APP_CONFIG = window.APP_CONFIG || {};
-  const TOKEN_KEY = APP_CONFIG.tokenKey || 'playground.user.token';
   const PLAYGROUND_KEY = APP_CONFIG.playgroundKey || 'playground.token';
+  localStorage.removeItem(APP_CONFIG.tokenKey || 'playground.user.token');
   const HIDE_INFO_COOKIE_NAME = APP_CONFIG.hideInfoCookieName || 'hide_info';
   const BASE_PATH = String(APP_CONFIG.basePath || '').replace(/\/$/, '');
   const FEATURES = {
@@ -11,12 +11,6 @@
     defectAssignments:!!APP_CONFIG.features?.defectAssignments
   };
   const VAPID_PUBLIC_KEY = APP_CONFIG.vapidPublicKey || 'BGwoqHwV5SrixvSr9YQ58M9U5MzFZ7m5rCrWrGBmMpPVkaWbCwJtL7KWAZFTeZps_2zcdguI1_R-ZtgpLIzPu6Y';
-  const CLAIMS = {
-    email:'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
-    first:'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname',
-    last:'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name',
-    role:'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'
-  };
   const ERRORS = [
     'Es wurden keine Kontrollberichte empfangen.','Es wurden Kontrollberichte ohne Inspektionsdatum geliefert.',
     'Für diesen Spielplatz ist am selben Tag bereits ein Bericht mit derselben Inspektionsart eingereicht worden.',
@@ -31,7 +25,7 @@
     'Revier','Spielplatzverantwortlicher','Projektleiter'
   ];
   const content = document.querySelector('#content');
-  const state = {user:readUser(), selectedPlayground:null, inspectionType:'', users:[], playgrounds:[]};
+  const state = {user:null, selectedPlayground:null, inspectionType:'', users:[], playgrounds:[]};
 
   function withBase(path='/') { if(/^https?:\/\//i.test(path))return path; const value=path.startsWith('/')?path:`/${path}`; return `${BASE_PATH}${value}` || '/'; }
   function stripBase(path) { if(!BASE_PATH)return path||'/'; if(path===BASE_PATH)return '/'; return path.startsWith(BASE_PATH + '/')?path.slice(BASE_PATH.length):path; }
@@ -44,16 +38,15 @@
   }
   function errorText(obj) { let text=obj?.errorMessage||''; if(text.startsWith('SPK-')){const n=Number(text.split('-')[1]);text=`${ERRORS[n]} (${text})`;} return text; }
   function toast(message, ms=4000) { const el=document.querySelector('#snackbar');el.textContent=message;el.classList.remove('hidden');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.add('hidden'),ms); }
-  function decodeJwt(token) { try{return JSON.parse(decodeURIComponent(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));}catch{return null;} }
-  function readUser(){const token=localStorage.getItem(TOKEN_KEY);const p=token&&decodeJwt(token);if(!p||!p.exp||p.exp*1000<=Date.now())return null;const last=p[CLAIMS.last]||'';return{fid:-1,mailAddress:p[CLAIMS.email]||'',firstName:p[CLAIMS.first]||'',lastName:last,role:p[CLAIMS.role]||'',initials:last.length>1?(last[0]+last[1]).toUpperCase():'anonym'};}
+  function prepareUser(user){if(!user)return null;const last=String(user.lastName||'');return{...user,initials:last.length>1?(last[0]+last[1]).toUpperCase():'AN'};}
   async function api(path, options={}) {
-    const headers={'Content-Type':'application/json',...(options.headers||{})};const token=localStorage.getItem(TOKEN_KEY);if(token)headers.Authorization=`Bearer ${token}`;
-    const response=await fetch(withBase(path),{...options,headers});if(!response.ok){const text=await response.text();const e=new Error(text||response.statusText);e.status=response.status;throw e;}
+    const headers={'Content-Type':'application/json',...(options.headers||{})};
+    const response=await fetch(withBase(path),{...options,headers,credentials:'same-origin'});if(!response.ok){const text=await response.text();const e=new Error(text||response.statusText);e.status=response.status;throw e;}
     if(response.status===204||response.headers.get('content-length')==='0')return null;
     const type=response.headers.get('content-type')||'';return type.includes('json')?response.json():response.blob();
   }
   function updateShell(){
-    state.user=readUser();const logged=!!state.user;
+    const logged=!!state.user;
     document.querySelector('#login-button').classList.toggle('hidden',logged);document.querySelector('#user-chip').classList.toggle('hidden',!logged);
     document.querySelector('#private-nav').classList.toggle('hidden',!logged);document.querySelector('#users-nav').classList.toggle('hidden',!logged||state.user?.role!=='administrator');
     document.querySelector('#inspections-nav').classList.toggle('hidden',!logged||state.user?.role==='maintenance');
@@ -72,7 +65,7 @@
   async function clearPlayground(){state.selectedPlayground=null;try{const db=await openPlaygroundDb();db.transaction('playgrounds','readwrite').objectStore('playgrounds').delete(PLAYGROUND_KEY);}catch{}}
 
   function renderWelcome(){content.innerHTML=`<div class="hero"><h1>Stadtgrün Winterthur</h1><h2>Department Technische Betriebe</h2></div><div class="welcome"><h3>Willkommen ${state.user?`${esc(state.user.firstName)} ${esc(state.user.lastName)} `:''}im System für die Spielplatzkontrolle der Stadt Winterthur</h3>${!state.user?'<p>Falls Sie ein durch die Stadtverwaltung Winterthur <b>akkreditierter Kontrolleur</b> sind, erhalten Sie ein Abbonement auf diese Applikation. Sie müssen sich <b>einloggen</b>, um die Funktionen dieser Applikation verwenden zu können. Falls Sie noch über <b>keine Login-Daten</b> verfügen, wenden Sie sich bitte an die Stadtverwaltung. Zum einloggen verwenden Sie bitte den <b>Login-Button</b> in der <b>oberen rechten Ecke</b>.</p>':''}<p>Sobald Sie eingeloggt sind, gelangen Sie im linken Applikations-Menü zu den <b>Prüfprozessen für die einzelnen Spielgeräte</b> eines Spielplatzes. Bevor Sie auf die Spielgeräte zugreifen können, müssen Sie einen <b>Spielplatz</b> im Menü-Punkt <i>Spielplatz</i> festlegen.</p><p>Diese Applikation ist <b>responsiv</b>, sie funktioniert dadurch auf diversen Endgeräten, z.B. sowohl auf einem Desktop-PC, einem Laptop als auch auf einem Smartphone. Die Darstellung passt sich der jeweiligen Bildschirmgrösse an. Des Weiteren ist diese Applikation <b>nicht offline-fähig</b>, Sie müssen permanente Internetverbindung haben um sie zu nutzen.</p><p style="font-size:.8em">v ${esc(window.APP_VERSION)}</p></div>`;}
-  function renderLogin(){content.innerHTML=`<div class="login-form"><form id="login-form"><h2>Anmeldung</h2><div id="login-error" class="error hidden">Benutzername oder Passphrase ungültig.</div>${field('Benutzername','loginname','','email','required autofocus')}${field('Passphrase','password','','password','required')}<button class="button toolbar-login" type="submit">LOGIN</button></form></div>`;document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const result=await api('/account/login',{method:'POST',body:JSON.stringify({mailAddress:f.get('loginname'),passPhrase:f.get('password')})});localStorage.setItem(TOKEN_KEY,result.securityTokenString);state.user=readUser();await clearPlayground();updateShell();navigate('/');}catch{document.querySelector('#login-error').classList.remove('hidden');}};}
+  function renderLogin(){content.innerHTML=`<div class="login-form"><form id="login-form"><h2>Anmeldung</h2><div id="login-error" class="error hidden">Benutzername oder Passphrase ungültig.</div>${field('Benutzername','loginname','','email','required autofocus')}${field('Passphrase','password','','password','required')}<button class="button toolbar-login" type="submit">LOGIN</button></form></div>`;document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const result=await api('/account/login',{method:'POST',body:JSON.stringify({mailAddress:f.get('loginname'),passPhrase:f.get('password')})});state.user=prepareUser(result.user);await clearPlayground();updateShell();navigate('/');}catch{document.querySelector('#login-error').classList.remove('hidden');}};}
 
   async function playgroundPicker(mode){
     const crossHairAssetImage=new Image();
@@ -241,10 +234,10 @@
   function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);}
 
   function bindRouteLinks(){document.querySelectorAll('[data-route]').forEach(a=>a.onclick=e=>{if(e.button!==0||e.ctrlKey||e.metaKey)return;e.preventDefault();navigate(new URL(a.href,location.href).pathname);});}
-  async function renderRoute(){updateShell();const path=stripBase(location.pathname);const known=path==='/'||path==='/login'||path==='/choosedevice'||path==='/inspections'||path==='/defects'||/^\/deviceattributes\/[^/]+\/\d+$/.test(path)||/^\/defect\/\d+\/\d+$/.test(path)||path==='/users'||path.startsWith('/users/')||path==='/notifications';if(!known){console.error(`Cannot match any routes. URL Segment: '${path}'`);content.innerHTML='';return;}try{if(path==='/'){renderWelcome();}else if(path==='/login'){renderLogin();}else if(!requireLogin())return;else if(path==='/choosedevice'){await playgroundPicker('overview');}else if(path==='/inspections'&&state.user?.role==='maintenance'){content.innerHTML=page('Inspektion','<div class="info-box warning">Benutzer der Rolle Wartung dürfen keine Kontrollen durchführen.</div>');}else if(path==='/inspections'){await playgroundPicker('inspection');}else if(path==='/defects'){await playgroundPicker('defect');}else if(/^\/deviceattributes\/[^/]+\/\d+$/.test(path)){await renderDeviceAttributes(Number(path.split('/').pop()));}else if(/^\/defect\/\d+\/\d+$/.test(path)){const p=path.split('/');await renderDefect(Number(p[2]),Number(p[3]));}else if(path==='/users'){await renderUsers();}else if(path.startsWith('/users/')){await renderUser(decodeURIComponent(path.slice(7)));}else if(path==='/notifications'){await renderNotifications();}bindRouteLinks();content.focus();}catch(e){if(e.status===401){localStorage.removeItem(TOKEN_KEY);state.user=null;updateShell();navigate('/login',true);}else{console.error(e);content.innerHTML=page('Fehler',`<div class="info-box warning">${esc(e.message||'Unbekannter Fehler')}</div>`);}}}
+  async function renderRoute(){updateShell();const path=stripBase(location.pathname);const known=path==='/'||path==='/login'||path==='/choosedevice'||path==='/inspections'||path==='/defects'||/^\/deviceattributes\/[^/]+\/\d+$/.test(path)||/^\/defect\/\d+\/\d+$/.test(path)||path==='/users'||path.startsWith('/users/')||path==='/notifications';if(!known){console.error(`Cannot match any routes. URL Segment: '${path}'`);content.innerHTML='';return;}try{if(path==='/'){renderWelcome();}else if(path==='/login'){renderLogin();}else if(!requireLogin())return;else if(path==='/choosedevice'){await playgroundPicker('overview');}else if(path==='/inspections'&&state.user?.role==='maintenance'){content.innerHTML=page('Inspektion','<div class="info-box warning">Benutzer der Rolle Wartung dürfen keine Kontrollen durchführen.</div>');}else if(path==='/inspections'){await playgroundPicker('inspection');}else if(path==='/defects'){await playgroundPicker('defect');}else if(/^\/deviceattributes\/[^/]+\/\d+$/.test(path)){await renderDeviceAttributes(Number(path.split('/').pop()));}else if(/^\/defect\/\d+\/\d+$/.test(path)){const p=path.split('/');await renderDefect(Number(p[2]),Number(p[3]));}else if(path==='/users'){await renderUsers();}else if(path.startsWith('/users/')){await renderUser(decodeURIComponent(path.slice(7)));}else if(path==='/notifications'){await renderNotifications();}bindRouteLinks();content.focus();}catch(e){if(e.status===401){state.user=null;updateShell();navigate('/login',true);}else{console.error(e);content.innerHTML=page('Fehler',`<div class="info-box warning">${esc(e.message||'Unbekannter Fehler')}</div>`);}}}
 
-  document.querySelector('#menu-button').onclick=()=>document.querySelector('#sidenav').classList.toggle('open');document.querySelector('#login-button').onclick=()=>navigate('/login');document.querySelector('#user-chip').onclick=()=>document.querySelector('#user-menu').classList.toggle('hidden');document.querySelector('#notifications-nav').onclick=()=>{document.querySelector('#user-menu').classList.add('hidden');navigate('/notifications');};document.querySelector('#logout-button').onclick=async()=>{await clearPlayground();localStorage.clear();state.user=null;document.querySelector('#user-menu').classList.add('hidden');updateShell();navigate('/');};window.onpopstate=renderRoute;bindRouteLinks();
+  document.querySelector('#menu-button').onclick=()=>document.querySelector('#sidenav').classList.toggle('open');document.querySelector('#login-button').onclick=()=>navigate('/login');document.querySelector('#user-chip').onclick=()=>document.querySelector('#user-menu').classList.toggle('hidden');document.querySelector('#notifications-nav').onclick=()=>{document.querySelector('#user-menu').classList.add('hidden');navigate('/notifications');};document.querySelector('#logout-button').onclick=async()=>{try{await api('/account/logout',{method:'POST'});}catch{}await clearPlayground();state.user=null;document.querySelector('#user-menu').classList.add('hidden');updateShell();navigate('/');};window.onpopstate=renderRoute;bindRouteLinks();
   if(!document.cookie.includes(`${HIDE_INFO_COOKIE_NAME}=true`)){const box=document.createElement('div');box.className='cookie';box.innerHTML='<button>X</button>Diese App verwendet Cookies. Nähere Informationen im Impressum.';box.querySelector('button').onclick=()=>{document.cookie=`${HIDE_INFO_COOKIE_NAME}=true; Max-Age=1576800000; SameSite=Lax; Path=${BASE_PATH || '/'}`;box.remove();};document.body.appendChild(box);}
   if(window.SERVICE_WORKER_ENABLED!==false&&'serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register(withBase('/static/sw.js'),{scope:withBase('/')}).catch(()=>{}));navigator.serviceWorker.addEventListener('message',event=>{const message=event.data?.message||event.data;if(message?.title)toast(message.title,6000);else if(message?.notification?.title)toast(message.notification.title,6000);});}
-  loadStoredPlayground().then(pg=>{state.selectedPlayground=pg;renderRoute();});
+  loadStoredPlayground().then(async pg=>{state.selectedPlayground=pg;try{state.user=prepareUser(await api('/account/me'));}catch(e){if(e.status!==401)console.error(e);}renderRoute();});
 })();

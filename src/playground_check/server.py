@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import os
+import secrets
 import time
 import traceback
 from pathlib import Path
@@ -27,6 +28,8 @@ configure_logging(settings)
 def create_router() -> Router:
     router = Router()
     router.add("POST", r"/Account/Login/?", service.login)
+    router.add("GET", r"/Account/Me/?", service.get_current_account)
+    router.add("POST", r"/Account/Logout/?", service.logout)
     router.add("GET", r"/Account/Users/?", service.get_users)
     router.add("GET", r"/Account/Users/Assignable/?", service.get_assignable_users)
     router.add("PUT", r"/Account/Users/?", service.update_user)
@@ -98,8 +101,17 @@ class Application:
             except Exception as exc:
                 LOG.exception("Request failed: %s %s", request.method, request.path)
                 response = self._exception_response(exc)
-        headers = [("Content-Type", response.content_type), ("Content-Length", str(len(response.body))),
-                   ("Access-Control-Allow-Origin", "*")]
+        headers = [
+            ("Content-Type", response.content_type),
+            ("Content-Length", str(len(response.body))),
+            ("X-Content-Type-Options", "nosniff"),
+            ("X-Frame-Options", "DENY"),
+            ("Referrer-Policy", "same-origin"),
+            ("Permissions-Policy", "camera=(self), microphone=(), geolocation=()"),
+        ]
+        if settings.cors_origin:
+            headers.append(("Access-Control-Allow-Origin", settings.cors_origin))
+            headers.append(("Vary", "Origin"))
         headers.extend(response.headers)
         start_response(status_line(response.status), headers)
         elapsed_ms = (time.perf_counter() - started) * 1000
@@ -186,6 +198,7 @@ class Application:
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).replace("<", "\\u003c")
+            csp_nonce = secrets.token_urlsafe(18)
             html = (
                 self.index.read_text(encoding="utf-8")
                 .replace("{{APP_TITLE}}", settings.title)
@@ -194,8 +207,20 @@ class Application:
                 .replace("{{APP_VERSION}}", __version__)
                 .replace("{{APP_CONFIG}}", app_config)
                 .replace("{{SERVICE_WORKER_ENABLED}}", "true" if settings.service_worker_enabled else "false")
+                .replace("{{CSP_NONCE}}", csp_nonce)
             )
-            return Response.text(html, 200, "text/html; charset=utf-8")
+            response = Response.text(html, 200, "text/html; charset=utf-8")
+            response.headers.append((
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                f"script-src 'self' 'nonce-{csp_nonce}'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob: https: http:; "
+                "connect-src 'self' https: http:; "
+                "worker-src 'self' blob:; "
+                "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+            ))
+            return response
         return Response.text("Not found", 404)
 
     @staticmethod

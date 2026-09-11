@@ -4,13 +4,14 @@ import base64
 import binascii
 from datetime import date, datetime
 from email.headerregistry import Address
+from http.cookies import SimpleCookie
 from typing import Any, Mapping
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from psycopg import Connection
 
-from .auth import EMAIL, GIVEN_NAME, NAME, ROLE, decode_token, hash_passphrase, issue_token
+from .auth import EMAIL, GIVEN_NAME, NAME, ROLE, decode_token, hash_passphrase, issue_token, verify_passphrase
 from .config import settings
 from .db import connect
 from .http import Request, Response
@@ -80,11 +81,40 @@ def _user_dict(row: Mapping[str, Any], include_password: bool = False) -> dict[s
     }
 
 
-def token_user(request: Request, role: str | None = None) -> dict[str, Any] | None:
+def _request_token(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
-    if not auth.lower().startswith("bearer "):
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    raw_cookie = request.headers.get("Cookie", "")
+    if raw_cookie:
+        try:
+            cookie = SimpleCookie()
+            cookie.load(raw_cookie)
+            morsel = cookie.get(settings.auth_cookie_name)
+            if morsel:
+                return morsel.value
+        except Exception:
+            pass
+    return ""
+
+
+def _auth_cookie(token: str, *, clear: bool = False) -> tuple[str, str]:
+    path = settings.base_path or "/"
+    parts = [f"{settings.auth_cookie_name}={token}", f"Path={path}", "HttpOnly", "SameSite=Strict"]
+    if settings.token_issuer.lower().startswith("https://"):
+        parts.append("Secure")
+    if clear:
+        parts.extend(["Max-Age=0", "Expires=Thu, 01 Jan 1970 00:00:00 GMT"] )
+    else:
+        parts.append("Max-Age=28800")
+    return ("Set-Cookie", "; ".join(parts))
+
+
+def token_user(request: Request, role: str | None = None) -> dict[str, Any] | None:
+    token = _request_token(request)
+    if not token:
         return None
-    payload = decode_token(auth[7:].strip())
+    payload = decode_token(token)
     if not payload:
         return None
     result = {
@@ -166,11 +196,20 @@ def login(request: Request) -> Response:
                     "UPDATE \"wgr_sp_kontrolleur\" SET letzter_anmeldeversuch=CURRENT_TIMESTAMP "
                     "WHERE trim(lower(e_mail))=%s", (email,),
                 )
-                if row.get("pwd") == hash_passphrase(password) and row.get("active"):
+                password_ok, needs_upgrade = verify_passphrase(row.get("pwd") or "", password, email)
+                if password_ok and row.get("active"):
+                    if needs_upgrade:
+                        db.execute(
+                            "UPDATE \"wgr_sp_kontrolleur\" SET pwd=%s WHERE trim(lower(e_mail))=%s",
+                            (hash_passphrase(password, email), email),
+                        )
                     user = _user_dict(row)
                     user["lastName"] = user["lastName"] or "Nachname unbekannt"
                     user["firstName"] = user["firstName"] or "Vorname unbekannt"
-                    return Response.json({"securityTokenString": issue_token(user)})
+                    token = issue_token(user)
+                    response = Response.json({"securityTokenString": token, "user": user})
+                    response.headers.append(_auth_cookie(token))
+                    return response
                 return Response.text("Keine oder falsche Login-Daten.", 401)
 
             # Preserved original quirk: dryRun also reaches this insert branch.
@@ -178,7 +217,7 @@ def login(request: Request) -> Response:
                 '''INSERT INTO "wgr_sp_kontrolleur"
                     (nachname, vorname, e_mail, pwd, rolle, aktiv, is_new)
                     VALUES (%s, %s, %s, %s, 'inspector', false, true)''',
-                (body.get("lastName") or "", body.get("firstName") or "", email, hash_passphrase(password)),
+                (body.get("lastName") or "", body.get("firstName") or "", email, hash_passphrase(password, email)),
             )
         return Response.text(
             UNAUTHORIZED + "Der Administrator wird informiert und wird Ihnen gegebenenfalls den Zugriff gewähren.", 401
@@ -186,6 +225,19 @@ def login(request: Request) -> Response:
     except Exception:
         return Response.text("Ein kritischer Fehler ist aufgetreten. Bitte kontaktieren Sie den Administrator.", 400)
 
+
+
+def get_current_account(request: Request) -> Response:
+    user, error = require_user(request)
+    if error:
+        return error
+    return Response.json(user)
+
+
+def logout(request: Request) -> Response:
+    response = Response(b"", 204, "application/json; charset=utf-8")
+    response.headers.append(_auth_cookie("", clear=True))
+    return response
 
 def get_users(request: Request) -> Response:
     _, error = require_user(request, "administrator")
@@ -255,7 +307,7 @@ def update_user(request: Request) -> Response:
                     return Response.json({"errorMessage": "SPK-9"})
                 password_affected = db.execute(
                     "UPDATE \"wgr_sp_kontrolleur\" SET pwd=%s WHERE e_mail=%s",
-                    (hash_passphrase(password), email),
+                    (hash_passphrase(password, email), email),
                 ).rowcount
             if affected == 1 and (not change_passphrase or password_affected == 1):
                 body.setdefault("errorMessage", "")

@@ -16,9 +16,24 @@ NAME = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
 ROLE = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
 
 
-def hash_passphrase(passphrase: str) -> str:
-    value = hashlib.pbkdf2_hmac("sha256", passphrase.encode("utf-8"), settings.salt, 100_000, 32)
+def hash_passphrase(passphrase: str, email: str | None = None) -> str:
+    salt = settings.salt
+    iterations = 100_000
+    if email:
+        salt = hmac.new(settings.salt, email.strip().lower().encode("utf-8"), hashlib.sha256).digest()
+        iterations = 600_000
+    value = hashlib.pbkdf2_hmac("sha256", passphrase.encode("utf-8"), salt, iterations, 32)
     return base64.b64encode(value).decode("ascii")
+
+
+def verify_passphrase(stored_hash: str, passphrase: str, email: str) -> tuple[bool, bool]:
+    current = hash_passphrase(passphrase, email)
+    if hmac.compare_digest(stored_hash or "", current):
+        return True, False
+    legacy = hash_passphrase(passphrase)
+    if hmac.compare_digest(stored_hash or "", legacy):
+        return True, True
+    return False, False
 
 
 def _b64url(value: bytes) -> str:
@@ -52,6 +67,9 @@ def issue_token(user: dict[str, Any]) -> str:
 def decode_token(token: str) -> dict[str, Any] | None:
     try:
         head, body, signature = token.split(".")
+        header = json.loads(_unb64url(head))
+        if not isinstance(header, dict) or header.get("alg") != "HS256" or header.get("typ") != "JWT":
+            return None
         unsigned = f"{head}.{body}"
         expected = hmac.new(settings.security_key.encode(), unsigned.encode(), hashlib.sha256).digest()
         if not hmac.compare_digest(expected, _unb64url(signature)):

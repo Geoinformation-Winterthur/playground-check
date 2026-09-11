@@ -35,6 +35,10 @@ def _security_key() -> str:
         raise RuntimeError(
             "PLAYGROUND_SECURITY_KEY must be set to a secret JWT signing key."
         )
+    if len(key) < 32:
+        raise RuntimeError(
+            "PLAYGROUND_SECURITY_KEY must contain at least 32 characters."
+        )
     return key
 
 
@@ -83,6 +87,8 @@ class Settings:
     playground_token_key: str
     playground_user_token_key: str
     hide_info_cookie_name: str
+    auth_cookie_name: str
+    cors_origin: str
     wms_url: str
     base_path: str
     token_issuer: str
@@ -118,6 +124,8 @@ class Settings:
             playground_token_key=os.getenv("PLAYGROUND_TOKEN_KEY", "playground.token"),
             playground_user_token_key=os.getenv("PLAYGROUND_USER_TOKEN_KEY", "playground.user.token"),
             hide_info_cookie_name=os.getenv("PLAYGROUND_HIDE_INFO_COOKIE_NAME", "hide_info"),
+            auth_cookie_name=os.getenv("PLAYGROUND_AUTH_COOKIE_NAME", "playground.auth"),
+            cors_origin=os.getenv("PLAYGROUND_CORS_ORIGIN", "").strip(),
             wms_url=os.getenv("PLAYGROUND_WMS_URL", os.getenv("WMS__ServiceUrl", "http://stadtplan.winterthur.ch/wms/Spielplatzkarte")),
             base_path=_base_path(os.getenv("PLAYGROUND_BASE_PATH", os.getenv("URL__ServiceBasePath", ""))),
             token_issuer=os.getenv(
