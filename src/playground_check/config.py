@@ -29,6 +29,15 @@ def _bool(value: str | None, default: bool = False) -> bool:
 
 
 
+def _security_key() -> str:
+    key = (os.getenv("PLAYGROUND_SECURITY_KEY") or os.getenv("SecurityKey") or "").strip()
+    if not key:
+        raise RuntimeError(
+            "PLAYGROUND_SECURITY_KEY must be set to a secret JWT signing key."
+        )
+    return key
+
+
 def _base_path(value: str | None) -> str:
     """Normalize an ASP.NET-style PathBase for the combined WSGI app."""
     value = (value or "").strip()
@@ -102,7 +111,7 @@ class Settings:
             host=os.getenv("PLAYGROUND_HOST", "127.0.0.1"),
             port=int(os.getenv("PLAYGROUND_PORT", "8010")),
             postgres_dsn=_npgsql_to_libpq(os.getenv("PLAYGROUND_POSTGRES_DSN", os.getenv("Postgres__ConnectionString", ""))),
-            security_key=os.getenv("PLAYGROUND_SECURITY_KEY", os.getenv("SecurityKey", "development-only-security-key")),
+            security_key=_security_key(),
             salt=salt,
             title=os.getenv("PLAYGROUND_TITLE", "Spielplatzkontrolle"),
             short_title=os.getenv("PLAYGROUND_SHORT_TITLE", "SPK"),
