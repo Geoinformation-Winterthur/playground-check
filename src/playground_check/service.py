@@ -966,7 +966,9 @@ def get_defect_picture(request: Request) -> Response:
 
 
 def put_defect_picture(request: Request) -> Response:
-    # Preserved: anonymous endpoint and missing return after the dry-run Ok().
+    _, error = require_user(request)
+    if error:
+        return error
     body = request.json() or {}
     with connect() as db:
         row = db.execute('''INSERT INTO "wgr_sp_insp_mangel_foto"
