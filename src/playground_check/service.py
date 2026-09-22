@@ -816,7 +816,14 @@ def get_defect_overview(request: Request) -> Response:
             mangel.fid_erledigung AS done_by,
             mangel.id_zustaendig_behebung AS responsible_body_id,
             mangel.fid_zustaendig_kontrolleur AS responsible_user_fid,
-            TRIM(CONCAT(COALESCE(kontrolleur.vorname, ''), ' ', COALESCE(kontrolleur.nachname, ''))) AS responsible_user_name
+            TRIM(CONCAT(COALESCE(kontrolleur.vorname, ''), ' ', COALESCE(kontrolleur.nachname, ''))) AS responsible_user_name,
+            (
+                mangel.fid_erledigung IS NULL
+                AND mangel.id_dringlichkeit = 1
+                AND mangel.datum_auftrag_zugewiesen IS NOT NULL
+                AND mangel.datum_auftrag_angenommen IS NULL
+                AND mangel.datum_auftrag_zugewiesen <= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+            ) AS assignment_overdue
             FROM "wgr_sp_insp_mangel" mangel
             LEFT JOIN "gr_v_spielgeraete" geraet ON geraet.fid=mangel.fid_spielgeraet
             LEFT JOIN "wgr_sp_spielplatz" spielplatz ON spielplatz.fid=geraet.fid_spielplatz
@@ -841,6 +848,7 @@ def get_defect_overview(request: Request) -> Response:
             "defectsResponsibleBodyId": row.get("responsible_body_id") or -1,
             "responsibleUserFid": row.get("responsible_user_fid") or -1,
             "responsibleUserName": row.get("responsible_user_name") or "",
+            "assignmentOverdue": bool(row.get("assignment_overdue")),
         })
     return Response.json(result)
 
