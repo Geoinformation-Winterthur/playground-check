@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -79,6 +80,239 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b'"defectAssignments":true', body)
         self.assertIn(b'"vapidPublicKey":"legacy-vapid-key"', body)
         self.assertNotIn("X-Content-Type-Options", captured["headers"])
+
+    def test_playdevice_overview_contains_legacy_document_controls(self):
+        script = (Path(service.__file__).with_name("static") / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("Abnahmedokumente", script)
+        self.assertIn("Zertifikatsdokumente", script)
+        self.assertIn('data-type="abnahme"', script)
+        self.assertIn('data-type="zertifikat"', script)
+        self.assertIn("downloadPdfDocument", script)
+        self.assertIn("Accept:'application/pdf'", script)
+
+    def test_document_endpoint_returns_acceptance_and_certificate_pdfs(self):
+        class Result:
+            def __init__(self, row):
+                self.row = row
+
+            def fetchone(self):
+                return self.row
+
+        class Database:
+            def execute(self, query, params):
+                if 'wgr_sp_abnahmen' in query:
+                    self.assert_params(params, 101)
+                    return Result({"content": b"%PDF-acceptance"})
+                if 'wgr_sp_zertifikat' in query:
+                    self.assert_params(params, 202)
+                    return Result({"content": b"%PDF-certificate"})
+                raise AssertionError(query)
+
+            @staticmethod
+            def assert_params(params, expected):
+                if params != (expected,):
+                    raise AssertionError(params)
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_connect():
+            yield Database()
+
+        with patch.object(service, "connect", fake_connect):
+            status, body, captured = self.request(
+                "GET", "/document/101?type=abnahme", token=self.token()
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(body, b"%PDF-acceptance")
+            self.assertEqual(captured["headers"].get("Content-Type"), "application/pdf")
+
+            status, body, captured = self.request(
+                "GET", "/document/202?type=zertifikat", token=self.token()
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(body, b"%PDF-certificate")
+            self.assertEqual(captured["headers"].get("Content-Type"), "application/pdf")
+
+    def test_document_upload_and_rename_are_admin_only_and_keep_name_in_blob(self):
+        class Result:
+            def __init__(self, row=None):
+                self.row = row
+
+            def fetchone(self):
+                return self.row
+
+        class Database:
+            def __init__(self):
+                self.content = None
+                self.calls = []
+
+            def execute(self, query, params=None):
+                self.calls.append((query, params))
+                if query.startswith('LOCK TABLE'):
+                    return Result()
+                if 'COALESCE(MAX(fid)' in query:
+                    return Result({"fid": 303})
+                if query.startswith('INSERT INTO'):
+                    self.content = params[2]
+                    return Result()
+                if query.startswith('SELECT ') and ' AS content ' in query:
+                    return Result({"content": self.content})
+                if query.startswith('UPDATE '):
+                    self.content = params[0]
+                    return Result()
+                raise AssertionError(query)
+
+        database = Database()
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_connect():
+            yield database
+
+        pdf = base64.b64encode(b"%PDF-1.4\n%%EOF").decode("ascii")
+        with patch.object(service, "connect", fake_connect):
+            status, uploaded, _ = self.request(
+                "POST", "/document/",
+                {"playgroundId": 12, "type": "abnahme", "name": "Abnahme-2026.pdf", "contentBase64": pdf},
+                token=self.token(),
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(uploaded, {"fid": 303, "name": "Abnahme-2026.pdf"})
+            self.assertIn(service.DOCUMENT_NAME_MARKER, database.content)
+
+            status, renamed, _ = self.request(
+                "PUT", "/document/303/name?type=abnahme", {"name": "Neu.pdf"}, token=self.token()
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(renamed["name"], "Neu.pdf")
+            content, name = service._document_parts(database.content)
+            self.assertEqual(content, b"%PDF-1.4\n%%EOF")
+            self.assertEqual(name, "Neu.pdf")
+
+            status, body, _ = self.request(
+                "GET", "/document/303?type=abnahme", token=self.token()
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(body, b"%PDF-1.4\n%%EOF")
+
+        inspector_token = issue_token({
+            "mailAddress": "inspector@winterthur.ch", "firstName": "I",
+            "lastName": "User", "role": "inspector",
+        })
+        with patch.object(service, "connect", side_effect=AssertionError("database must not be touched")):
+            status, _, _ = self.request(
+                "POST", "/document/",
+                {"playgroundId": 12, "type": "abnahme", "name": "x.pdf", "contentBase64": pdf},
+                token=inspector_token,
+            )
+            self.assertEqual(status, 401)
+
+    def test_document_buttons_use_names_and_truncate_after_eight_characters(self):
+        script = (Path(service.__file__).with_name("static") / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("value.length>8", script)
+        self.assertIn("value.slice(0,8)", script)
+        self.assertIn("document-upload", script)
+        self.assertIn("doc-rename", script)
+        self.assertIn("doc-delete", script)
+        self.assertIn("state.user?.role==='administrator'", script)
+
+    def test_document_delete_is_admin_only_and_deletes_database_row(self):
+        class Result:
+            def __init__(self, row=None):
+                self.row = row
+
+            def fetchone(self):
+                return self.row
+
+        class Database:
+            def __init__(self):
+                self.exists = True
+
+            def execute(self, query, params=None):
+                if query.startswith('DELETE FROM "wgr_sp_abnahmen"') and 'RETURNING fid' in query:
+                    row = {"fid": 303} if self.exists else None
+                    self.exists = False
+                    return Result(row)
+                raise AssertionError(query)
+
+        database = Database()
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_connect():
+            yield database
+
+        with patch.object(service, "connect", fake_connect):
+            status, deleted, _ = self.request(
+                "DELETE", "/document/303?type=abnahme", token=self.token()
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(deleted, {"fid": 303})
+            self.assertFalse(database.exists)
+
+        inspector_token = issue_token({
+            "mailAddress": "inspector@winterthur.ch", "firstName": "I",
+            "lastName": "User", "role": "inspector",
+        })
+        with patch.object(service, "connect", side_effect=AssertionError("database must not be touched")):
+            status, _, _ = self.request(
+                "DELETE", "/document/303?type=abnahme", token=inspector_token
+            )
+            self.assertEqual(status, 401)
+
+    def test_non_admin_can_download_but_not_edit_documents(self):
+        class Result:
+            def fetchone(self):
+                return {"content": b"%PDF-visible"}
+
+        class Database:
+            def execute(self, query, params=None):
+                if query.startswith('SELECT ') and ' AS content ' in query:
+                    return Result()
+                raise AssertionError(query)
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_connect():
+            yield Database()
+
+        inspector_token = issue_token({
+            "mailAddress": "inspector@winterthur.ch", "firstName": "I",
+            "lastName": "User", "role": "inspector",
+        })
+        with patch.object(service, "connect", fake_connect):
+            status, body, _ = self.request(
+                "GET", "/document/303?type=abnahme", token=inspector_token
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(body, b"%PDF-visible")
+
+        pdf = base64.b64encode(b"%PDF-1.4\n%%EOF").decode("ascii")
+        with patch.object(service, "connect", side_effect=AssertionError("database must not be touched")):
+            status, _, _ = self.request(
+                "POST", "/document/",
+                {"playgroundId": 12, "type": "abnahme", "name": "x.pdf", "contentBase64": pdf},
+                token=inspector_token,
+            )
+            self.assertEqual(status, 401)
+            status, _, _ = self.request(
+                "PUT", "/document/303/name?type=abnahme", {"name": "neu.pdf"}, token=inspector_token
+            )
+            self.assertEqual(status, 401)
+            status, _, _ = self.request(
+                "DELETE", "/document/303?type=abnahme", token=inspector_token
+            )
+            self.assertEqual(status, 401)
+
+    def test_document_endpoint_rejects_unknown_type_before_database_access(self):
+        with patch.object(service, "connect", side_effect=AssertionError("database must not be touched")):
+            status, body, _ = self.request(
+                "GET", "/document/101?type=anderes", token=self.token()
+            )
+        self.assertEqual(status, 400)
+        self.assertEqual(body, b"")
 
     def test_swagger_openapi_endpoints_are_available_without_database(self):
         status, document, _ = self.request("GET", "/swagger/v1/swagger.json")

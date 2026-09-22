@@ -20,6 +20,42 @@ from .http import Request, Response
 UNAUTHORIZED = "Sie sind entweder nicht als Kontrolleur in der Spielplatzkontrolle-Datenbank erfasst oder Sie haben keine Zugriffsberechtigung."
 DOTNET_MIN_DATE = "0001-01-01T00:00:00"
 VALID_ROLES = {"administrator", "inspector", "maintenance"}
+DOCUMENT_NAME_MARKER = b"\n%PLAYGROUND-CHECK-FILENAME:"
+DOCUMENT_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _document_parts(value: bytes | bytearray | memoryview | None) -> tuple[bytes, str]:
+    data = bytes(value or b"")
+    index = data.rfind(DOCUMENT_NAME_MARKER)
+    if index < 0:
+        return data, ""
+    encoded = data[index + len(DOCUMENT_NAME_MARKER):].splitlines()[0].strip()
+    try:
+        name = base64.urlsafe_b64decode(encoded + b"=" * (-len(encoded) % 4)).decode("utf-8").strip()
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return data, ""
+    return data[:index], name
+
+
+def _document_with_name(value: bytes, name: str) -> bytes:
+    content, _ = _document_parts(value)
+    encoded = base64.urlsafe_b64encode(name.strip().encode("utf-8")).rstrip(b"=")
+    return content + DOCUMENT_NAME_MARKER + encoded + b"\n"
+
+
+def _document_name_from_tail(value: bytes | bytearray | memoryview | None, fallback: str) -> str:
+    _, name = _document_parts(value)
+    return name or fallback
+
+
+def _document_storage(kind: str) -> tuple[str, str] | None:
+    if kind == "abnahme":
+        return "wgr_sp_abnahmen", "abnahmedokument"
+    if kind == "zertifikat":
+        return "wgr_sp_zertifikat", "zertifikatsdokument"
+    return None
+
+
 VALID_RESPONSIBILITIES = {
     "Revier Mitte", "Revier Süd", "Revier West", "Revier Ost", "Dispo",
     "Revier", "Spielplatzverantwortlicher", "Projektleiter",
@@ -677,12 +713,24 @@ def _playground_result(db: Connection, row: Mapping[str, Any], inspection_type: 
     bodies = [{"id": item["id"], "value": item["value"]} for item in db.execute(
         'SELECT id, value FROM "wgr_sp_zust_mangelbeheb_tbd"'
     ).fetchall()]
-    acceptance = [item["fid"] for item in db.execute(
-        'SELECT fid FROM "wgr_sp_abnahmen" WHERE fid_spielplatz=%s AND abnahmedokument IS NOT NULL', (row["id"],)
-    ).fetchall()]
-    certificates = [item["fid"] for item in db.execute(
-        'SELECT fid FROM "wgr_sp_zertifikat" WHERE fid_spielplatz=%s AND zertifikatsdokument IS NOT NULL', (row["id"],)
-    ).fetchall()]
+    acceptance_rows = db.execute(
+        'SELECT fid, substring(abnahmedokument from greatest(octet_length(abnahmedokument)-1023,1)) AS meta_tail '
+        'FROM "wgr_sp_abnahmen" WHERE fid_spielplatz=%s AND abnahmedokument IS NOT NULL ORDER BY fid', (row["id"],)
+    ).fetchall()
+    certificate_rows = db.execute(
+        'SELECT fid, substring(zertifikatsdokument from greatest(octet_length(zertifikatsdokument)-1023,1)) AS meta_tail '
+        'FROM "wgr_sp_zertifikat" WHERE fid_spielplatz=%s AND zertifikatsdokument IS NOT NULL ORDER BY fid', (row["id"],)
+    ).fetchall()
+    acceptance = [item["fid"] for item in acceptance_rows]
+    certificates = [item["fid"] for item in certificate_rows]
+    acceptance_documents = [
+        {"fid": item["fid"], "name": _document_name_from_tail(item.get("meta_tail"), str(item["fid"]))}
+        for item in acceptance_rows
+    ]
+    certificate_documents = [
+        {"fid": item["fid"], "name": _document_name_from_tail(item.get("meta_tail"), str(item["fid"]))}
+        for item in certificate_rows
+    ]
     return {
         "id": row["id"], "name": row.get("name") or "", "address": row.get("address") or "",
         "dateOfLastInspection": row.get("date_of_last_inspection") or DOTNET_MIN_DATE,
@@ -692,6 +740,7 @@ def _playground_result(db: Connection, row: Mapping[str, Any], inspection_type: 
         "inspectionTypeOptions": type_options, "renovationTypeOptions": renovations,
         "defectsResponsibleBodyOptions": bodies, "chosenTypeOfInspection": "",
         "documentsOfAcceptanceFids": acceptance, "certificateDocumentsFids": certificates,
+        "documentsOfAcceptance": acceptance_documents, "certificateDocuments": certificate_documents,
     }
 
 
@@ -1166,16 +1215,98 @@ def get_document(request: Request) -> Response:
     if error:
         return error
     kind = request.query.get("type", "").strip().lower()
-    if kind not in {"abnahme", "zertifikat"}:
+    storage = _document_storage(kind)
+    if not storage:
         return Response(b"", 400)
-    table, column = ("wgr_sp_abnahmen", "abnahmedokument") if kind == "abnahme" else ("wgr_sp_zertifikat", "zertifikatsdokument")
+    table, column = storage
     try:
         with connect() as db:
             row = db.execute(f'SELECT {column} AS content FROM "{table}" WHERE fid=%s',
                              (int(request.params["fid"]),)).fetchone()
-        return Response.file(row["content"], "application/pdf") if row else Response(b"", 400)
+        if not row:
+            return Response(b"", 400)
+        content, _ = _document_parts(row["content"])
+        return Response.file(content, "application/pdf")
     except Exception:
         return Response(b"", 400)
+
+
+def post_document(request: Request) -> Response:
+    _, error = require_user(request, "administrator")
+    if error:
+        return error
+    body = request.json() or {}
+    kind = str(body.get("type") or "").strip().lower()
+    storage = _document_storage(kind)
+    name = str(body.get("name") or "").strip()
+    try:
+        playground_id = int(body.get("playgroundId"))
+        content = base64.b64decode(str(body.get("contentBase64") or ""), validate=True)
+    except (TypeError, ValueError, binascii.Error):
+        return Response.json({"errorMessage": "Ungültige Dokumentdaten."}, 400)
+    if not storage or playground_id <= 0 or not name or len(name) > 255:
+        return Response.json({"errorMessage": "Ungültige Dokumentdaten."}, 400)
+    if len(content) > DOCUMENT_MAX_BYTES or not content.startswith(b"%PDF-"):
+        return Response.json({"errorMessage": "Es sind nur PDF-Dokumente bis 20 MB zulässig."}, 400)
+    table, column = storage
+    try:
+        with connect() as db:
+            db.execute(f'LOCK TABLE "{table}" IN EXCLUSIVE MODE')
+            next_row = db.execute(f'SELECT COALESCE(MAX(fid), 0) + 1 AS fid FROM "{table}"').fetchone()
+            fid = int(next_row["fid"])
+            db.execute(
+                f'INSERT INTO "{table}" (fid, fid_spielplatz, {column}) VALUES (%s, %s, %s)',
+                (fid, playground_id, _document_with_name(content, name)),
+            )
+        return Response.json({"fid": fid, "name": name})
+    except Exception:
+        return Response.json({"errorMessage": "Dokument konnte nicht gespeichert werden."}, 400)
+
+
+def rename_document(request: Request) -> Response:
+    _, error = require_user(request, "administrator")
+    if error:
+        return error
+    kind = request.query.get("type", "").strip().lower()
+    storage = _document_storage(kind)
+    body = request.json() or {}
+    name = str(body.get("name") or "").strip()
+    if not storage or not name or len(name) > 255:
+        return Response.json({"errorMessage": "Ungültiger Dokumentname."}, 400)
+    table, column = storage
+    try:
+        fid = int(request.params["fid"])
+        with connect() as db:
+            row = db.execute(f'SELECT {column} AS content FROM "{table}" WHERE fid=%s', (fid,)).fetchone()
+            if not row or not row.get("content"):
+                return Response.json({"errorMessage": "Dokument nicht gefunden."}, 404)
+            db.execute(f'UPDATE "{table}" SET {column}=%s WHERE fid=%s',
+                       (_document_with_name(row["content"], name), fid))
+        return Response.json({"fid": fid, "name": name})
+    except Exception:
+        return Response.json({"errorMessage": "Dokumentname konnte nicht gespeichert werden."}, 400)
+
+
+def delete_document(request: Request) -> Response:
+    _, error = require_user(request, "administrator")
+    if error:
+        return error
+    kind = request.query.get("type", "").strip().lower()
+    storage = _document_storage(kind)
+    if not storage:
+        return Response.json({"errorMessage": "Ungültiger Dokumenttyp."}, 400)
+    table, _ = storage
+    try:
+        fid = int(request.params["fid"])
+        with connect() as db:
+            row = db.execute(
+                f'DELETE FROM "{table}" WHERE fid=%s RETURNING fid', (fid,)
+            ).fetchone()
+            if not row:
+                return Response.json({"errorMessage": "Dokument nicht gefunden."}, 404)
+        return Response.json({"fid": fid})
+    except Exception:
+        return Response.json({"errorMessage": "Dokument konnte nicht gelöscht werden."}, 400)
 
 
 def push_register(request: Request) -> Response:

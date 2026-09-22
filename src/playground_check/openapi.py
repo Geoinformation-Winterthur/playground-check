@@ -216,12 +216,35 @@ def build_openapi_document() -> dict:
                 "responses": {"200": {"description": "Success"}},
             },
         },
+        "/Document": {
+            "post": {
+                "tags": ["Document"],
+                "summary": "Upload document (administrator)",
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}},
+                "responses": {"200": {"description": "Success"}, "401": {"description": "Unauthorized"}},
+            }
+        },
         "/Document/{documentfid}": {
             "get": {
                 "tags": ["Document"],
                 "summary": "Read document",
                 "parameters": [_param("documentfid", "path", "integer", True), _param("type", "query", required=True)],
                 "responses": {"200": {"description": "Success"}},
+            },
+            "delete": {
+                "tags": ["Document"],
+                "summary": "Delete document (administrator)",
+                "parameters": [_param("documentfid", "path", "integer", True), _param("type", "query", required=True)],
+                "responses": {"200": {"description": "Success"}, "401": {"description": "Unauthorized"}, "404": {"description": "Not found"}},
+            },
+        },
+        "/Document/{documentfid}/Name": {
+            "put": {
+                "tags": ["Document"],
+                "summary": "Rename document (administrator)",
+                "parameters": [_param("documentfid", "path", "integer", True), _param("type", "query", required=True)],
+                "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}},
+                "responses": {"200": {"description": "Success"}, "401": {"description": "Unauthorized"}},
             }
         },
         "/PushSubscription/Register": {
