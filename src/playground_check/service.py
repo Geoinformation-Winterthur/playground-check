@@ -990,6 +990,7 @@ def create_defect(request: Request) -> Response:
         responsible = int(body.get("responsibleUserFid") or -1)
         date_done = date.today() if body.get("dateDone") is not None else None
         with connect() as db:
+            db.execute('LOCK TABLE "wgr_sp_insp_mangel" IN EXCLUSIVE MODE')
             row = db.execute('''INSERT INTO "wgr_sp_insp_mangel"
                 (tid, fid_spielgeraet, datum, id_dringlichkeit, beschrieb, bemerkunng,
                  datum_erledigung, fid_erledigung, id_zustaendig_behebung,
@@ -1214,6 +1215,7 @@ def put_defect_picture(request: Request) -> Response:
         return error
     body = request.json() or {}
     with connect() as db:
+        db.execute('LOCK TABLE "wgr_sp_insp_mangel_foto" IN EXCLUSIVE MODE')
         row = db.execute('''INSERT INTO "wgr_sp_insp_mangel_foto"
             (tid, tid_maengel, picture_base64, picture_base64_thumb, zeitpunkt)
             VALUES ((SELECT COALESCE(MAX(tid),0)+1 FROM "wgr_sp_insp_mangel_foto"), %s, %s, %s, %s)
@@ -1269,6 +1271,7 @@ def post_inspections(request: Request) -> Response:
                 ).fetchone()
                 if not device_playground or device_playground["fid_spielplatz"] != playground_fid:
                     return Response.json({"errorMessage": "SPK-12"})
+            db.execute('LOCK TABLE "wgr_sp_inspektion", "wgr_sp_insp_bericht" IN EXCLUSIVE MODE')
             target = None
             target_column = {1: "dat_naech_visu_insp", 2: "dat_naech_oper_insp", 3: "dat_naech_haupt_insp"}.get(type_id)
             if target_column and playground_fid:
