@@ -924,8 +924,10 @@ def get_defect_overview(request: Request) -> Response:
             (
                 mangel.fid_erledigung IS NULL
                 AND mangel.id_dringlichkeit = 1
+                AND mangel.auftrag_status = 'zugewiesen'
                 AND mangel.datum_auftrag_zugewiesen IS NOT NULL
                 AND mangel.datum_auftrag_angenommen IS NULL
+                AND mangel.datum_auftrag_abgelehnt IS NULL
                 AND mangel.datum_auftrag_zugewiesen <= CURRENT_TIMESTAMP - INTERVAL '24 hours'
             ) AS assignment_overdue
             FROM "wgr_sp_insp_mangel" mangel
