@@ -1250,6 +1250,25 @@ def post_inspections(request: Request) -> Response:
             inspector_fid = inspector["fid"] if inspector else None
             type_id = type_row["id"] if type_row else None
             playground_fid = playground["fid_spielplatz"] if playground else None
+            if not inspector_fid or not type_id or not playground_fid:
+                return Response.json({"errorMessage": "SPK-11"})
+            authorized = db.execute(
+                '''SELECT 1 FROM "wgr_sp_inspart_kontr"
+                   WHERE fid_kontrolleur=%s AND fid_spielplatz=%s AND id_inspektionsart=%s
+                   LIMIT 1''',
+                (inspector_fid, playground_fid, type_id),
+            ).fetchone()
+            if not authorized:
+                return Response.json({"errorMessage": "SPK-11"})
+            for report in reports:
+                fid = int(report.get("playdeviceFid") or 0)
+                if not fid:
+                    return Response.json({"errorMessage": "SPK-12"})
+                device_playground = db.execute(
+                    'SELECT fid_spielplatz FROM "gr_v_spielgeraete" WHERE fid=%s', (fid,)
+                ).fetchone()
+                if not device_playground or device_playground["fid_spielplatz"] != playground_fid:
+                    return Response.json({"errorMessage": "SPK-12"})
             target = None
             target_column = {1: "dat_naech_visu_insp", 2: "dat_naech_oper_insp", 3: "dat_naech_haupt_insp"}.get(type_id)
             if target_column and playground_fid:

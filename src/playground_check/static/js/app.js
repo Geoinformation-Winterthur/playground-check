@@ -17,7 +17,9 @@
     'Es wurde ein leeres Bildgeliefert','Die Objekt-ID (UUID) fehlt.',
     'Ein Spielgerät, das nicht geprüft werden muss, wurde an den Webservice zur Prüfung gesendet.',
     'Änderung nicht gespeichert, da nicht ausreichend Benutzerdaten angegeben wurden.',
-    'Für Mängel der Priorität B sind Dringlichkeit, Zuständigkeit/Typ und Zuständigkeit/Person Pflichtfelder.'
+    'Für Mängel der Priorität B sind Dringlichkeit, Zuständigkeit/Typ und Zuständigkeit/Person Pflichtfelder.',
+    'Die angemeldete Person ist für diesen Spielplatz und diese Inspektionsart nicht berechtigt.',
+    'Mindestens ein übermitteltes Spielgerät gehört nicht zum ausgewählten Spielplatz.'
   ];
   const RESPONSIBILITIES = [
     'Revier Mitte','Revier Süd','Revier West','Revier Ost','Dispo',
