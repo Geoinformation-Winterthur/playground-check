@@ -8,7 +8,9 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "127.0.0.1:8010:8010"
+      - "${PLAYGROUND_BIND_ADDRESS:-127.0.0.1}:${PLAYGROUND_PUBLISHED_PORT:-8010}:8010"
+    env_file:
+      - .env
     environment:
       PLAYGROUND_POSTGRES_DSN: "${PLAYGROUND_POSTGRES_DSN:?In .env setzen}"
       PLAYGROUND_SECURITY_KEY: "${PLAYGROUND_SECURITY_KEY:?In .env setzen}"
