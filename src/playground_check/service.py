@@ -1076,18 +1076,22 @@ def assignment_status(request: Request, accepted: bool) -> Response:
     body = request.json() or {}
     comment = (body.get("assignmentComment") or "").strip() or None
     with connect() as db:
+        assignment_matches_user = '''(
+            mangel.fid_zustaendig_kontrolleur=%s OR EXISTS (
+                SELECT 1 FROM "wgr_sp_kontrolleur" kontrolleur
+                WHERE kontrolleur.fid=mangel.fid_zustaendig_kontrolleur
+                AND trim(lower(kontrolleur.e_mail))=%s
+            )
+        )'''
+        params = (comment, int(request.params["tid"]), user["fid"], user["mailAddress"])
         if accepted:
-            cursor = db.execute('''UPDATE "wgr_sp_insp_mangel" SET auftrag_status='angenommen',
+            cursor = db.execute(f'''UPDATE "wgr_sp_insp_mangel" AS mangel SET auftrag_status='angenommen',
                 datum_auftrag_angenommen=CURRENT_TIMESTAMP, datum_auftrag_abgelehnt=NULL,
-                bemerkung_auftrag=%s WHERE tid=%s AND fid_zustaendig_kontrolleur=%s''',
-                (comment, int(request.params["tid"]), user["fid"]),
-            )
+                bemerkung_auftrag=%s WHERE tid=%s AND {assignment_matches_user}''', params)
         else:
-            cursor = db.execute('''UPDATE "wgr_sp_insp_mangel" SET auftrag_status='abgelehnt',
+            cursor = db.execute(f'''UPDATE "wgr_sp_insp_mangel" AS mangel SET auftrag_status='abgelehnt',
                 datum_auftrag_abgelehnt=CURRENT_TIMESTAMP, bemerkung_auftrag=%s
-                WHERE tid=%s AND fid_zustaendig_kontrolleur=%s''',
-                (comment, int(request.params["tid"]), user["fid"]),
-            )
+                WHERE tid=%s AND {assignment_matches_user}''', params)
     return Response.json({"errorMessage": "" if cursor.rowcount == 1 else "SPK-3"})
 
 
