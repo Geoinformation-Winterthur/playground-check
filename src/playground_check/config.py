@@ -108,9 +108,11 @@ class Settings:
         salt_raw = os.getenv("PLAYGROUND_SALT_BASE64", "cGxheWdyb3VuZC1jaGVjay1zYWx0")
         salt_raw = os.getenv("SaltBase64String", salt_raw)
         try:
-            salt = base64.b64decode(salt_raw)
-        except Exception:
-            salt = b"playground-check-salt"
+            salt = base64.b64decode(salt_raw, validate=True)
+        except Exception as exc:
+            raise RuntimeError(
+                "PLAYGROUND_SALT_BASE64 must contain valid Base64 data."
+            ) from exc
         return cls(
             root=PROJECT_ROOT,
             host=os.getenv("PLAYGROUND_HOST", "127.0.0.1"),
