@@ -66,6 +66,16 @@ class ApplicationTest(unittest.TestCase):
         status, manifest, _ = self.request("GET", "/static/manifest.webmanifest")
         self.assertEqual(manifest["short_name"], "SPK")
 
+    def test_defect_deep_link_is_served_by_spa(self):
+        status, body, captured = self.request("GET", "/defect/267566/1772")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Spielplatzkontrolle", body)
+        self.assertIn("text/html", captured["headers"].get("Content-Type", ""))
+
+        status, body, _ = self.request("GET", "/defect/not-an-api-route")
+        self.assertEqual(status, 404)
+        self.assertEqual(body, b"Not found")
+
     def test_frontend_receives_legacy_feature_flags_and_vapid_key(self):
         configured = replace(
             server_module.settings,

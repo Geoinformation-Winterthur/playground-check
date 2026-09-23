@@ -9,6 +9,7 @@ import os
 import secrets
 import time
 import traceback
+import re
 from pathlib import Path
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
@@ -184,7 +185,12 @@ class Application:
             if relative == "sw.js":
                 response.headers.append(("Service-Worker-Allowed", (settings.base_path or "") + "/"))
             return response
-        if self._is_api_path(request.path):
+        # `/defect/<playdeviceFid>/<defectTid>` is a client-side SPA route.
+        # It shares the first path segment with the `/Defect` REST API, so a
+        # direct browser request must fall through to index.html instead of
+        # being rejected as an unknown API endpoint.
+        defect_frontend_route = re.fullmatch(r"/defect/\d+/\d+/?", request.path, re.IGNORECASE)
+        if self._is_api_path(request.path) and not defect_frontend_route:
             return Response.text("Not found", 404)
         if request.method == "GET":
             app_config = json.dumps(
