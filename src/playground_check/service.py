@@ -1096,7 +1096,7 @@ def assignment_status(request: Request, accepted: bool) -> Response:
                 bemerkung_auftrag=%s WHERE tid=%s AND {assignment_matches_user}''', params)
         else:
             cursor = db.execute(f'''UPDATE "wgr_sp_insp_mangel" AS mangel SET auftrag_status='abgelehnt',
-                datum_auftrag_abgelehnt=CURRENT_TIMESTAMP, bemerkung_auftrag=%s
+                datum_auftrag_abgelehnt=CURRENT_TIMESTAMP, datum_auftrag_angenommen=NULL, bemerkung_auftrag=%s
                 WHERE tid=%s AND {assignment_matches_user}''', params)
     return Response.json({"errorMessage": "" if cursor.rowcount == 1 else "SPK-3"})
 
