@@ -199,6 +199,7 @@ class Application:
                     "playgroundKey": settings.playground_token_key,
                     "hideInfoCookieName": settings.hide_info_cookie_name,
                     "basePath": settings.base_path,
+                    "wmsUrl": settings.wms_url,
                     "features": {
                         "pushNotifications": settings.push_notifications,
                     },
