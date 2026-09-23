@@ -1272,6 +1272,14 @@ def post_inspections(request: Request) -> Response:
                 if not device_playground or device_playground["fid_spielplatz"] != playground_fid:
                     return Response.json({"errorMessage": "SPK-12"})
             db.execute('LOCK TABLE "wgr_sp_inspektion", "wgr_sp_insp_bericht" IN EXCLUSIVE MODE')
+            duplicate = db.execute(
+                '''SELECT 1 FROM "wgr_sp_inspektion"
+                   WHERE fid_spielplatz=%s AND id_inspektionsart=%s AND datum_inspektion::date=%s
+                   LIMIT 1''',
+                (playground_fid, type_id, service_date),
+            ).fetchone()
+            if duplicate:
+                return Response.json({"errorMessage": "SPK-2"})
             target = None
             target_column = {1: "dat_naech_visu_insp", 2: "dat_naech_oper_insp", 3: "dat_naech_haupt_insp"}.get(type_id)
             if target_column and playground_fid:
