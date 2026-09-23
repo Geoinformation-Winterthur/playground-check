@@ -22,6 +22,9 @@ DOTNET_MIN_DATE = "0001-01-01T00:00:00"
 VALID_ROLES = {"administrator", "inspector", "maintenance"}
 DOCUMENT_NAME_MARKER = b"\n%PLAYGROUND-CHECK-FILENAME:"
 DOCUMENT_MAX_BYTES = 20 * 1024 * 1024
+IMAGE_MAX_BYTES = 10 * 1024 * 1024
+IMAGE_REQUEST_MAX_BYTES = 25 * 1024 * 1024
+ALLOWED_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 
 def _document_parts(value: bytes | bytearray | memoryview | None) -> tuple[bytes, str]:
@@ -1155,9 +1158,43 @@ def _mime(raw: bytes) -> str:
     return "application/octet-stream"
 
 
+def _image_upload_error(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return "Bilddaten fehlen."
+    text = value.strip()
+    declared_mime = None
+    if text.lower().startswith("data:") and "," in text:
+        meta, text = text.split(",", 1)
+        declared_mime = meta[5:].split(";", 1)[0].lower()
+        if ";base64" not in meta.lower():
+            return "Bilddaten müssen Base64-kodiert sein."
+    try:
+        raw = base64.b64decode(text.replace(" ", "+") + "=" * (-len(text) % 4), validate=True)
+    except (ValueError, binascii.Error):
+        return "Bilddaten sind nicht gültig Base64-kodiert."
+    if len(raw) > IMAGE_MAX_BYTES:
+        return "Bild ist zu gross (maximal 10 MB)."
+    mime = _mime(raw)
+    if mime not in ALLOWED_IMAGE_MIME_TYPES:
+        return "Nicht unterstützter Bildtyp."
+    if declared_mime and declared_mime != mime:
+        return "Angegebener Bildtyp stimmt nicht mit den Bilddaten überein."
+    return None
+
+
+def _image_request_too_large(request: Request) -> bool:
+    try:
+        return int(request.environ.get("CONTENT_LENGTH") or 0) > IMAGE_REQUEST_MAX_BYTES
+    except (TypeError, ValueError):
+        return False
+
+
 def get_playdevice_picture(request: Request) -> Response:
     if _bool(request.query.get("dryRun")):
         return Response(b"", 200, "application/json; charset=utf-8")
+    _, error = require_user(request)
+    if error:
+        return error
     with connect() as db:
         row = db.execute('SELECT picture_base64 AS picture FROM "gr_v_spielgeraete" WHERE fid=%s',
                          (int(request.params["fid"]),)).fetchone()
@@ -1174,11 +1211,16 @@ def exchange_playdevice_picture(request: Request) -> Response:
     fid = int(request.query.get("fid") or 0)
     if fid < 1:
         return Response.json({"errorMessage": "SPK-7"})
+    if _image_request_too_large(request):
+        return Response.text("Bild-Upload ist zu gross.", 413)
     body = request.json() or {}
     data = body.get("data") if "data" in body else body.get("Data")
     data = data.strip() if isinstance(data, str) else data
     if not data:
         return Response.json({"errorMessage": "SPK-6"})
+    image_error = _image_upload_error(data)
+    if image_error:
+        return Response.text(image_error, 400)
     if not _bool(request.query.get("dryRun")):
         with connect() as db:
             db.execute('UPDATE "gr_v_spielgeraete" SET picture_base64=%s WHERE fid=%s',
@@ -1192,8 +1234,13 @@ def put_playdevice_picture(request: Request) -> Response:
         return error
     if _bool(request.query.get("dryRun")):
         return Response(b"", 200, "application/json; charset=utf-8")
+    if _image_request_too_large(request):
+        return Response.text("Bild-Upload ist zu gross.", 413)
     body = request.json() or {}
     data = body.get("data") if "data" in body else body.get("Data")
+    image_error = _image_upload_error(data)
+    if image_error:
+        return Response.text(image_error, 400)
     with connect() as db:
         db.execute('UPDATE "gr_v_spielgeraete" SET picture_base64=%s WHERE fid=%s',
                    (data, int(request.params["fid"])))
@@ -1203,6 +1250,9 @@ def put_playdevice_picture(request: Request) -> Response:
 def get_defect_picture(request: Request) -> Response:
     if _bool(request.query.get("dryRun")):
         return Response(b"", 200, "application/json; charset=utf-8")
+    _, error = require_user(request)
+    if error:
+        return error
     column = "picture_base64_thumb" if _bool(request.query.get("thumb")) else "picture_base64"
     with connect() as db:
         row = db.execute(f'SELECT {column} AS value FROM "wgr_sp_insp_mangel_foto" WHERE tid=%s',
@@ -1217,15 +1267,22 @@ def put_defect_picture(request: Request) -> Response:
     _, error = require_user(request)
     if error:
         return error
+    if _image_request_too_large(request):
+        return Response.text("Bild-Upload ist zu gross.", 413)
     body = request.json() or {}
+    picture = body.get("base64StringPicture") or ""
+    thumbnail = body.get("base64StringPictureThumb") or ""
+    for value in (picture, thumbnail):
+        image_error = _image_upload_error(value)
+        if image_error:
+            return Response.text(image_error, 400)
     with connect() as db:
         db.execute('LOCK TABLE "wgr_sp_insp_mangel_foto" IN EXCLUSIVE MODE')
         row = db.execute('''INSERT INTO "wgr_sp_insp_mangel_foto"
             (tid, tid_maengel, picture_base64, picture_base64_thumb, zeitpunkt)
             VALUES ((SELECT COALESCE(MAX(tid),0)+1 FROM "wgr_sp_insp_mangel_foto"), %s, %s, %s, %s)
             RETURNING tid''',
-            (int(request.params["tid"]), body.get("base64StringPicture") or "",
-             body.get("base64StringPictureThumb") or "", _bool(body.get("afterFixing"))),
+            (int(request.params["tid"]), picture, thumbnail, _bool(body.get("afterFixing"))),
         ).fetchone()
     return Response.json({"tid": row["tid"]}) if row else Response(b"", 400)
 
