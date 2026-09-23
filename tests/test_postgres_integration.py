@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import unittest
 
+os.environ.setdefault("PLAYGROUND_SECURITY_KEY", "test-security-key-at-least-32-characters-long")
+
 from playground_check.db import REQUIRED_RELATIONS, connect
 
 

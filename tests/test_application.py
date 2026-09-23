@@ -8,6 +8,9 @@ import tempfile
 import logging
 import unittest
 from decimal import Decimal
+
+os.environ.setdefault("PLAYGROUND_SECURITY_KEY", "test-security-key-at-least-32-characters-long")
+
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -45,7 +48,14 @@ class ApplicationTest(unittest.TestCase):
         def start(status, headers):
             captured.update(status=status, headers=dict(headers))
 
-        payload = b"".join(self.app(environ, start))
+        if token:
+            def claimed_user(request, role=None, dry_run=False):
+                return None if dry_run else service.token_user(request, role)
+
+            with patch.object(service, "current_user", side_effect=claimed_user):
+                payload = b"".join(self.app(environ, start))
+        else:
+            payload = b"".join(self.app(environ, start))
         content_type = captured["headers"].get("Content-Type", "")
         parsed = json.loads(payload) if payload and "json" in content_type else payload
         return int(captured["status"].split()[0]), parsed, captured
@@ -88,14 +98,16 @@ class ApplicationTest(unittest.TestCase):
         self.assertIn(b'"pushNotifications":true', body)
         self.assertNotIn(b'"defectAssignments"', body)
         self.assertIn(b'"vapidPublicKey":"legacy-vapid-key"', body)
-        self.assertNotIn("X-Content-Type-Options", captured["headers"])
+        self.assertEqual(captured["headers"].get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(captured["headers"].get("X-Frame-Options"), "DENY")
 
-    def test_playdevice_overview_contains_legacy_document_controls(self):
+    def test_playdevice_overview_contains_document_controls(self):
         script = (Path(service.__file__).with_name("static") / "js" / "app.js").read_text(encoding="utf-8")
         self.assertIn("Abnahmedokumente", script)
         self.assertIn("Zertifikatsdokumente", script)
-        self.assertIn('data-type="abnahme"', script)
-        self.assertIn('data-type="zertifikat"', script)
+        self.assertIn('data-type="${type}"', script)
+        self.assertIn("renderDocumentBox(pg,'abnahme'", script)
+        self.assertIn("renderDocumentBox(pg,'zertifikat'", script)
         self.assertIn("downloadPdfDocument", script)
         self.assertIn("Accept:'application/pdf'", script)
 
@@ -340,7 +352,7 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(captured["headers"].get("Location"), "/swagger/index.html")
 
 
-    def test_elk_payload_matches_legacy_shape(self):
+    def test_elk_payload_contains_expected_metadata(self):
         handler = ElkLogHandler(
             url="http://127.0.0.1:9/elk", verify_ssl=True, environment="test",
             directory="/srv/playground", service="playground-check-service", hostname="wsstadt573",
@@ -377,8 +389,8 @@ class ApplicationTest(unittest.TestCase):
 
     def test_unknown_api_paths_do_not_fall_back_to_spa(self):
         status, body, _ = self.request("GET", "/playground/not-a-route")
-        self.assertEqual(status, 404)
-        self.assertEqual(body, b"Not found")
+        self.assertEqual(status, 401)
+        self.assertIn(b"keine zugriffsberechtigung", body.lower())
 
         status, body, _ = self.request("GET", "/defects-client-route")
         self.assertEqual(status, 200)
@@ -390,7 +402,7 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(body, b"Method not allowed")
         self.assertEqual(captured["headers"].get("Allow"), "POST")
 
-    def test_login_rejects_mail_addresses_rejected_by_legacy_mailaddress(self):
+    def test_login_rejects_invalid_mail_addresses(self):
         invalid_addresses = (
             "edgar@@win.ch",
             "edgar@",
@@ -408,6 +420,51 @@ class ApplicationTest(unittest.TestCase):
                     self.assertEqual(status, 400)
                     self.assertEqual(body, b"Keine oder falsche Login-Daten.")
 
+    def test_current_user_revalidates_token_against_database(self):
+        class Result:
+            def __init__(self, row):
+                self.row = row
+
+            def fetchone(self):
+                return self.row
+
+        class Database:
+            def execute(self, query, params=None):
+                self.query = query
+                self.params = params
+                return Result({
+                    "fid": 42,
+                    "last_name": "User",
+                    "first_name": "Test",
+                    "email": "test@winterthur.ch",
+                    "pwd": "",
+                    "last_login_attempt": None,
+                    "database_time": None,
+                    "role": "administrator",
+                    "responsibility": "",
+                    "active": True,
+                    "is_new": False,
+                })
+
+        from contextlib import contextmanager
+
+        database = Database()
+
+        @contextmanager
+        def fake_connect():
+            yield database
+
+        request = type("Request", (), {
+            "headers": {"Authorization": f"Bearer {self.token()}"},
+            "query": {},
+        })()
+        with patch.object(service, "connect", fake_connect):
+            user = service.current_user(request)
+        self.assertEqual(user["fid"], 42)
+        self.assertEqual(user["mailAddress"], "test@winterthur.ch")
+        self.assertIn("trim(lower(e_mail))=%s", database.query)
+        self.assertEqual(database.params, ("test@winterthur.ch",))
+
     def test_jwt_round_trip_and_role_protection(self):
         token = self.token()
         self.assertEqual(
@@ -422,7 +479,7 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(status, 500)
         self.assertIn(b"Index was outside", message)
 
-    def test_malformed_legacy_playground_id_url_keeps_aspnet_model_binding_error(self):
+    def test_malformed_playground_id_url_returns_model_binding_error(self):
         status, result, _ = self.request(
             "GET",
             "/playground/1&inspectiontype=Hauptinspektion%20(HI)",

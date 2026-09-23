@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import date, datetime
+from email.errors import HeaderParseError
 from email.headerregistry import Address
 from http.cookies import SimpleCookie
 from typing import Any, Mapping
@@ -199,7 +200,7 @@ def require_user(request: Request, role: str | None = None) -> tuple[dict[str, A
 def _valid_mail_address(value: str) -> bool:
     try:
         parsed = Address(addr_spec=value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, HeaderParseError):
         return False
     return parsed.addr_spec == value
 
