@@ -334,7 +334,7 @@ def update_user(request: Request) -> Response:
             affected = db.execute(
                 '''UPDATE "wgr_sp_kontrolleur"
                    SET nachname=%s, vorname=%s, rolle=%s, zustaendigkeit=%s, aktiv=%s, is_new=%s
-                   WHERE e_mail=%s''',
+                   WHERE trim(lower(e_mail))=%s''',
                 (body.get("lastName") or "", body.get("firstName") or "", role,
                  responsibility or None,
                  _bool(body.get("active")), _bool(body.get("isNew")), email),
@@ -345,7 +345,7 @@ def update_user(request: Request) -> Response:
                 if len(password) < 8:
                     return Response.json({"errorMessage": "SPK-9"})
                 password_affected = db.execute(
-                    "UPDATE \"wgr_sp_kontrolleur\" SET pwd=%s WHERE e_mail=%s",
+                    "UPDATE \"wgr_sp_kontrolleur\" SET pwd=%s WHERE trim(lower(e_mail))=%s",
                     (hash_passphrase(password, email), email),
                 ).rowcount
             if affected == 1 and (not change_passphrase or password_affected == 1):
@@ -372,7 +372,7 @@ def delete_user(request: Request) -> Response:
         ).fetchone()["count"]
         if users[0]["role"] == "administrator" and count == 1:
             return Response.json({"errorMessage": "SPK-3"})
-        if db.execute("UPDATE \"wgr_sp_kontrolleur\" SET aktiv=false WHERE e_mail=%s", (email,)).rowcount == 1:
+        if db.execute("UPDATE \"wgr_sp_kontrolleur\" SET aktiv=false WHERE trim(lower(e_mail))=%s", (email,)).rowcount == 1:
             return Response(b"", 200, "application/json; charset=utf-8")
     return Response.json({"errorMessage": "SPK-3"})
 
@@ -437,7 +437,7 @@ def only_names(request: Request) -> Response:
             JOIN "wgr_sp_kontrolleur" kt ON kt.fid=ikt.fid_kontrolleur
             JOIN "wgr_sp_inspektionsart_tbd" ina ON ina.id=ikt.id_inspektionsart
             LEFT JOIN "wgr_sp_inspektion" insp ON insp.fid_spielplatz=sp.fid
-            WHERE kt.e_mail=%s AND ina.value=%s
+            WHERE trim(lower(kt.e_mail))=%s AND ina.value=%s
             ORDER BY sp.name, insp.datum_inspektion DESC'''
         params = (user["mailAddress"], base_type)
     with connect() as db:
@@ -1303,7 +1303,7 @@ def post_inspections(request: Request) -> Response:
     service_date = date.today()
     try:
         with connect() as db:
-            inspector = db.execute('SELECT fid FROM "wgr_sp_kontrolleur" WHERE e_mail=%s',
+            inspector = db.execute('SELECT fid FROM "wgr_sp_kontrolleur" WHERE trim(lower(e_mail))=%s',
                                    (user["mailAddress"],)).fetchone()
             type_row = db.execute('SELECT id FROM "wgr_sp_inspektionsart_tbd" WHERE value=%s',
                                   (base_type,)).fetchone()
