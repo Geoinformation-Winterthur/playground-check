@@ -1,4 +1,4 @@
-const CACHE='spielplatzkontrolle-2026.7.2';
+const CACHE='spielplatzkontrolle-2026.11';
 const BASE_PATH=new URL(self.registration.scope).pathname.replace(/\/$/,'');
 const scoped=path=>`${BASE_PATH}${path}`||'/';
 const APP_SHELL=[
