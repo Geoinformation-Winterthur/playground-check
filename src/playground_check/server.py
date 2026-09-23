@@ -201,7 +201,6 @@ class Application:
                     "basePath": settings.base_path,
                     "features": {
                         "pushNotifications": settings.push_notifications,
-                        "defectAssignments": settings.defect_assignments,
                     },
                     "vapidPublicKey": settings.vapid_public_key,
                 },

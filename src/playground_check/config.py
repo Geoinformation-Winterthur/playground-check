@@ -95,7 +95,6 @@ class Settings:
     compatibility_bugs: bool
     service_worker_enabled: bool
     push_notifications: bool
-    defect_assignments: bool
     vapid_public_key: str
     service_description: str
     elk_url: str
@@ -135,7 +134,6 @@ class Settings:
             compatibility_bugs=_bool(os.getenv("PLAYGROUND_COMPATIBILITY_BUGS"), True),
             service_worker_enabled=_bool(os.getenv("PLAYGROUND_SERVICE_WORKER_ENABLED"), True),
             push_notifications=_bool(os.getenv("PLAYGROUND_FEATURE_PUSH_NOTIFICATIONS"), False),
-            defect_assignments=_bool(os.getenv("PLAYGROUND_FEATURE_DEFECT_ASSIGNMENTS"), False),
             vapid_public_key=os.getenv(
                 "PLAYGROUND_VAPID_PUBLIC_KEY",
                 "BGwoqHwV5SrixvSr9YQ58M9U5MzFZ7m5rCrWrGBmMpPVkaWbCwJtL7KWAZFTeZps_2zcdguI1_R-ZtgpLIzPu6Y",
