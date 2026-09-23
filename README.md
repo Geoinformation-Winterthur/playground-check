@@ -240,11 +240,14 @@ ASP.NET-Service:
 - `wgr_sp_abnahmen`
 - `wgr_sp_zertifikat`
 - `wgr_sp_push_subscription`
+- `wgr_sp_mangel_zuweisung_hist`
 
 Punktkoordinaten werden mit den PostGIS-Funktionen `ST_X` und `ST_Y` gelesen.
 Schreibvorgänge erfolgen wie im Original direkt auf den dafür verwendeten
-Tabellen beziehungsweise aktualisierbaren Views. Die Anwendung führt keine
-Migrationen und keine `CREATE TABLE`-Anweisungen aus.
+Tabellen beziehungsweise aktualisierbaren Views. Die Anwendung führt selbst keine
+Migrationen und keine `CREATE TABLE`-Anweisungen aus. Für die Historisierung von
+Mangel-Zuweisungen muss vor dem Deployment einmalig
+`sql/20260923_defect_assignment_history.sql` ausgeführt werden.
 
 Der Datenbankbenutzer benötigt die gleichen Rechte wie der bisherige
 Servicebenutzer: `SELECT` auf den verwendeten Tabellen/Views sowie `INSERT` und

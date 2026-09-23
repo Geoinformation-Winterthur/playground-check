@@ -520,6 +520,57 @@ def get_map_image(request: Request) -> Response:
         return Response.json(base64.b64encode(response.read()).decode("ascii"))
 
 
+def _user_name(db: Connection, fid: Any) -> str:
+    if not fid:
+        return ""
+    row = db.execute(
+        'SELECT vorname AS first_name, nachname AS last_name FROM "wgr_sp_kontrolleur" WHERE fid=%s',
+        (fid,),
+    ).fetchone()
+    if not row:
+        return ""
+    return f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+
+
+def _record_assignment_change(
+    db: Connection, defect_tid: int, changed_by: Mapping[str, Any], previous_fid: Any, new_fid: Any
+) -> None:
+    previous = int(previous_fid) if previous_fid else None
+    new = int(new_fid) if new_fid else None
+    if previous == new:
+        return
+    changed_by_name = f"{changed_by.get('firstName') or ''} {changed_by.get('lastName') or ''}".strip()
+    db.execute(
+        '''INSERT INTO "wgr_sp_mangel_zuweisung_hist"
+            (tid_mangel, geaendert_am, geaendert_durch_fid, geaendert_durch_name,
+             vorher_fid, vorher_name, nachher_fid, nachher_name)
+            VALUES (%s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s)''',
+        (defect_tid, changed_by.get("fid"), changed_by_name or None,
+         previous, _user_name(db, previous) or None, new, _user_name(db, new) or None),
+    )
+
+
+def _assignment_history(db: Connection, defect_tid: int) -> list[dict[str, Any]]:
+    rows = db.execute(
+        '''SELECT id, geaendert_am AS changed_at, geaendert_durch_fid AS changed_by_fid,
+            geaendert_durch_name AS changed_by_name, vorher_fid AS previous_fid,
+            vorher_name AS previous_name, nachher_fid AS new_fid, nachher_name AS new_name
+            FROM "wgr_sp_mangel_zuweisung_hist"
+            WHERE tid_mangel=%s ORDER BY geaendert_am DESC, id DESC''',
+        (defect_tid,),
+    ).fetchall()
+    return [{
+        "id": row.get("id"),
+        "changedAt": row.get("changed_at"),
+        "changedByFid": row.get("changed_by_fid") or -1,
+        "changedByName": row.get("changed_by_name") or "",
+        "previousUserFid": row.get("previous_fid") or -1,
+        "previousUserName": row.get("previous_name") or "",
+        "newUserFid": row.get("new_fid") or -1,
+        "newUserName": row.get("new_name") or "",
+    } for row in rows]
+
+
 def _defect_creator_name(db: Connection, fid: Any) -> str:
     if not fid:
         return ""
@@ -559,6 +610,7 @@ def _defect_dict(db: Connection, row: Mapping[str, Any], pictures: bool = True) 
         "infoMailRecipientName": row.get("info_mail_recipient_name") or "",
         "createdByFid": row.get("created_by_fid") or -1,
         "createdByName": _defect_creator_name(db, row.get("created_by_fid")),
+        "assignmentHistory": _assignment_history(db, int(row["tid"])),
         "errorMessage": "",
     }
 
@@ -952,6 +1004,9 @@ def create_defect(request: Request) -> Response:
                  datetime.now() if responsible > 0 else None, (body.get("assignmentComment") or "").strip() or None,
                  user["fid"]),
             ).fetchone()
+            if responsible > 0:
+                _record_assignment_change(db, int(row["tid"]), user, None, responsible)
+            body["assignmentHistory"] = _assignment_history(db, int(row["tid"]))
         body["tid"] = row["tid"]
         body.setdefault("errorMessage", "")
     except Exception:
@@ -972,21 +1027,42 @@ def update_defect(request: Request) -> Response:
         responsible = int(body.get("responsibleUserFid") or -1)
         date_done = _date_value(body.get("dateDone"))
         with connect() as db:
+            current = db.execute(
+                'SELECT fid_zustaendig_kontrolleur AS responsible_user_fid FROM "wgr_sp_insp_mangel" WHERE tid=%s',
+                (body.get("tid"),),
+            ).fetchone()
+            if not current:
+                return Response.json({"errorMessage": "SPK-3"})
+            new_responsible = responsible if responsible > 0 else None
+            assignment_changed = current.get("responsible_user_fid") != new_responsible
+            assignment_status_value = (
+                "zugewiesen" if new_responsible and assignment_changed
+                else (body.get("assignmentStatus") or "zugewiesen") if new_responsible else None
+            )
+            assignment_created_value = (
+                datetime.now() if new_responsible and assignment_changed
+                else (_date_value(body.get("dateAssignmentCreated")) or datetime.now()) if new_responsible else None
+            )
+            assignment_comment_value = (
+                None if assignment_changed else (body.get("assignmentComment") or "").strip() or None
+            )
             db.execute('''UPDATE "wgr_sp_insp_mangel" SET
                 id_dringlichkeit=%s, beschrieb=%s, bemerkunng=%s, datum_erledigung=%s,
                 id_zustaendig_behebung=%s, fid_zustaendig_kontrolleur=%s,
                 auftrag_status=%s, datum_auftrag_zugewiesen=%s, bemerkung_auftrag=%s,
+                datum_auftrag_angenommen=CASE WHEN fid_zustaendig_kontrolleur IS DISTINCT FROM %s THEN NULL ELSE datum_auftrag_angenommen END,
+                datum_auftrag_abgelehnt=CASE WHEN fid_zustaendig_kontrolleur IS DISTINCT FROM %s THEN NULL ELSE datum_auftrag_abgelehnt END,
                 infomail_gesendet_am=CASE WHEN fid_zustaendig_kontrolleur IS DISTINCT FROM %s THEN NULL ELSE infomail_gesendet_am END,
                 infomail_empfaenger=CASE WHEN fid_zustaendig_kontrolleur IS DISTINCT FROM %s THEN NULL ELSE infomail_empfaenger END,
                 fid_erledigung=%s WHERE tid=%s''',
                 (body.get("priority"), body.get("defectDescription") or "", body.get("defectComment") or "", date_done,
                  body.get("defectsResponsibleBodyId") if int(body.get("defectsResponsibleBodyId") or -1) > 0 else None,
-                 responsible if responsible > 0 else None,
-                 (body.get("assignmentStatus") or "zugewiesen") if responsible > 0 else None,
-                 _date_value(body.get("dateAssignmentCreated")) or datetime.now() if responsible > 0 else None,
-                 (body.get("assignmentComment") or "").strip() or None,
-                 responsible if responsible > 0 else None, responsible if responsible > 0 else None,
+                 new_responsible, assignment_status_value, assignment_created_value, assignment_comment_value,
+                 new_responsible, new_responsible, new_responsible, new_responsible,
                  user["fid"] if date_done else None, body.get("tid")),
+            )
+            _record_assignment_change(
+                db, int(body.get("tid")), user, current.get("responsible_user_fid"), new_responsible,
             )
         return Response.json({"errorMessage": ""})
     except Exception:

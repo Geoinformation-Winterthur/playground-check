@@ -19,6 +19,7 @@ REQUIRED_RELATIONS = (
     "wgr_v_sp_nfall_insp_krit", "wgr_sp_dringlichkeit_tbd",
     "wgr_sp_zust_mangelbeheb_tbd", "wgr_sp_abnahmen",
     "wgr_sp_zertifikat", "wgr_sp_push_subscription",
+    "wgr_sp_mangel_zuweisung_hist",
 )
 
 
