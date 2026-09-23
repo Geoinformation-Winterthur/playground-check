@@ -599,6 +599,8 @@ def _defect_dict(db: Connection, row: Mapping[str, Any], pictures: bool = True) 
         "defectPicsTids": before, "defectPicsAfterFixingTids": after,
         "defectDescription": row.get("description") or "", "dateCreation": row.get("date_creation"),
         "dateDone": row.get("date_done"), "done": row.get("done_by") is not None,
+        "doneByFid": row.get("done_by") or -1,
+        "doneByName": _defect_creator_name(db, row.get("done_by")),
         "defectComment": row.get("comment") or "",
         "defectsResponsibleBodyId": row.get("responsible_body_id") or -1,
         "responsibleUserFid": row.get("responsible_user_fid") or -1,
